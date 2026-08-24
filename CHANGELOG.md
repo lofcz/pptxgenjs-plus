@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `slide.creationId = true` assigns a reproducible `p14:creationId`; tables get unique default `p14:modId` values
 - `addSummaryZoom({ sectionTitles })` can target multiple sections
 - `pptxgenjs-plus-std` workspace package with `grid` / `gridFor` layout helpers and a stacked-bar `waterfall` construction (ported from NeomaVerwaltung/PptxGenJS)
+- `pptxgenjs-plus-std` text measure helpers (`measureText`, `fitText`, `checkOverflow`, `registerFontMetrics`), metric/point converters (`cm`, `pt`), `row`/`column` splits, and measured `paginateTable` / `tableFromHtml` paging
 
 ### Changed
 

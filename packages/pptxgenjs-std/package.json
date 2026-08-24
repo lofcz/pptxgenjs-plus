@@ -1,7 +1,7 @@
 {
 	"name": "pptxgenjs-plus-std",
 	"version": "4.1.20",
-	"description": "Layout and diagram helpers for pptxgenjs-plus",
+	"description": "Layout, text-measure, table-paging, and diagram helpers for pptxgenjs-plus",
 	"homepage": "https://github.com/lofcz/pptxgenjs-plus/tree/next/packages/pptxgenjs-std#readme",
 	"bugs": {
 		"url": "https://github.com/lofcz/pptxgenjs-plus/issues"
@@ -22,7 +22,9 @@
 		"pptxgenjs-plus",
 		"powerpoint",
 		"waterfall-chart",
-		"slide-layout"
+		"slide-layout",
+		"text-measure",
+		"table-paginate"
 	],
 	"files": [
 		"dist",
@@ -46,6 +48,14 @@
 		"./charts": {
 			"types": "./dist/charts/index.d.ts",
 			"default": "./dist/charts/index.js"
+		},
+		"./text": {
+			"types": "./dist/text/index.d.ts",
+			"default": "./dist/text/index.js"
+		},
+		"./tables": {
+			"types": "./dist/tables/index.d.ts",
+			"default": "./dist/tables/index.js"
 		}
 	},
 	"scripts": {

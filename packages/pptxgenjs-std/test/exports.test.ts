@@ -10,6 +10,8 @@ import { join } from 'node:path'
 import * as barrel from '../src/index'
 import * as charts from '../src/charts'
 import * as layout from '../src/layout'
+import * as text from '../src/text'
+import * as tables from '../src/tables'
 
 const SRC = join(import.meta.dirname, '..', 'src')
 const PACKAGE = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'))
@@ -20,7 +22,7 @@ const categories = readdirSync(SRC, { withFileTypes: true })
 	.sort()
 
 test('every category directory is reachable as its own subpath', () => {
-	assert.deepEqual(categories, ['charts', 'layout'], 'a new category needs the wiring below')
+	assert.deepEqual(categories, ['charts', 'layout', 'tables', 'text'], 'a new category needs the wiring below')
 	for (const category of categories) {
 		const subpath = PACKAGE.exports[`./${category}`]
 		assert.ok(subpath, `exports is missing ./${category} - consumers cannot import it`)
@@ -30,7 +32,7 @@ test('every category directory is reachable as its own subpath', () => {
 })
 
 test('the root barrel re-exports every category and nothing else', () => {
-	const fromCategories = [...Object.keys(layout), ...Object.keys(charts)].sort()
+	const fromCategories = [...Object.keys(layout), ...Object.keys(charts), ...Object.keys(text), ...Object.keys(tables)].sort()
 	assert.deepEqual(Object.keys(barrel).sort(), fromCategories, 'the barrel and the categories have drifted')
 })
 
@@ -40,7 +42,7 @@ test('the barrel defines nothing of its own', () => {
 })
 
 test('every export is a callable helper', () => {
-	assert.deepEqual(Object.keys(barrel).sort(), ['grid', 'gridFor', 'waterfall'])
+	assert.deepEqual(Object.keys(barrel).sort(), ['checkOverflow', 'cm', 'column', 'cssColorToHex', 'fitText', 'grid', 'gridFor', 'measureText', 'paginateTable', 'pt', 'registerFontMetrics', 'row', 'tableFromHtml', 'waterfall'])
 	for (const [name, value] of Object.entries(barrel)) assert.equal(typeof value, 'function', `${name} should be a function`)
 })
 
@@ -48,6 +50,8 @@ test('the barrel and the subpaths hand back the same functions', () => {
 	assert.equal(barrel.grid, layout.grid)
 	assert.equal(barrel.gridFor, layout.gridFor)
 	assert.equal(barrel.waterfall, charts.waterfall)
+	assert.equal(barrel.measureText, text.measureText)
+	assert.equal(barrel.paginateTable, tables.paginateTable)
 })
 
 test('every exports target is published', () => {
@@ -71,7 +75,9 @@ test('the core is a lockstep peer, not a runtime dependency', () => {
 		readdirSync(join(SRC, category)).map(file => readFileSync(join(SRC, category, file), 'utf8'))
 	)
 	for (const source of sources) {
-		const runtimeImport = /^import (?!type )/m.exec(source)
-		assert.equal(runtimeImport, null, `runtime import found - the core must only be imported as a type: ${runtimeImport?.[0]}`)
+		// Relative imports stay allowed - helpers may share code inside the package. What must never
+		// appear is a runtime import of a *package*, which is how the core would sneak in as a dep.
+		const packageImport = /^import (?!type )[^']*from '[^.][^']*'/m.exec(source)
+		assert.equal(packageImport, null, `runtime package import found - the core must only be imported as a type: ${packageImport?.[0]}`)
 	}
 })
