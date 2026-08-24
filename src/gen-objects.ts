@@ -28,6 +28,7 @@ import {
 	AddSlideProps,
 	BackgroundProps,
 	BorderProps,
+	ConnectorProps,
 	Group,
 	GroupProps,
 	IChartMulti,
@@ -461,7 +462,7 @@ function isSvgFillSource (data: string, path: string): boolean {
  * Register a table-cell image fill as slide media so `a:blipFill` can embed it
  * (Dominik-von-Burg PR 1461). Must run at addTable time so encodeSlideMediaRels sees the rels.
  */
-function registerTableCellImageFill (target: PresSlide, fill: ShapeFillProps | undefined): number | undefined {
+function registerTableCellImageFill (target: PresSlide | SlideLayout, fill: ShapeFillProps | undefined): number | undefined {
 	const data = typeof fill?.data === 'string' ? fill.data : ''
 	const path = typeof fill?.path === 'string' ? fill.path : ''
 	if (!data && !path) return undefined
@@ -516,7 +517,44 @@ function registerTableCellImageFill (target: PresSlide, fill: ShapeFillProps | u
 	return rId
 }
 
+function isStructuredImageFill (fill?: ShapeFillProps): boolean {
+	return !!fill && (fill.type === 'image' || !!fill.image)
+}
+
+/**
+ * Resolve a picture fill's image into a slide relationship.
+ * `genXmlColorSelection` is pure, so the rId has to be attached before XML is generated.
+ */
+export function resolveImageFill (target: PresSlide | SlideLayout, fill?: ShapeFillProps): void {
+	if (!fill || typeof fill !== 'object') return
+	if (!isStructuredImageFill(fill) && !(fill.data || fill.path) ) return
+	if (!isStructuredImageFill(fill) && (fill.color || (fill.type && fill.type !== 'image'))) return
+
+	const data = fill.image?.data ?? fill.data ?? ''
+	const path = fill.image?.path ?? fill.path ?? ''
+	if (!data && !path) {
+		console.warn('[pptxgenjs] `fill.type:"image"` requires `fill.image.data` or `fill.image.path` - fill ignored')
+		return
+	}
+	if (data && !data.toLowerCase().includes('base64,')) {
+		console.warn('[pptxgenjs] `fill.image.data` lacks a base64 header (ex: \'image/png;base64,iV[...]\') - fill ignored')
+		return
+	}
+
+	const rId = registerTableCellImageFill(target, { data, path })
+	if (!rId) return
+	if (fill.image) fill.image._rId = rId
+	else fill._rId = rId
+}
+
+function resolveObjectImageFills (target: PresSlide | SlideLayout, options: { fill?: ShapeFillProps, fillOverlay?: { fill?: ShapeFillProps } } | undefined): void {
+	if (!options) return
+	if (options.fill) resolveImageFill(target, options.fill)
+	if (options.fillOverlay?.fill) resolveImageFill(target, options.fillOverlay.fill)
+}
+
 export function addImageDefinition(target: PresSlide | SlideLayout, opt: ImageProps): void {
+	if (opt.fillOverlay?.fill) resolveImageFill(target, opt.fillOverlay.fill)
 	const newObject: ISlideObject = {
 		_type: SLIDE_OBJECT_TYPES.image,
 		text: undefined,
@@ -598,6 +636,11 @@ export function addImageDefinition(target: PresSlide | SlideLayout, opt: ImagePr
 		softEdge: opt.softEdge,
 		reflection: opt.reflection,
 		blur: opt.blur,
+		fillOverlay: opt.fillOverlay,
+		effectDag: opt.effectDag,
+		alphaEffects: opt.alphaEffects,
+		recolor: opt.recolor,
+		styleRef: opt.styleRef,
 		line: opt.line || imageBorderToLine(opt.border),
 		_sizeFromImage: !intWidth && !intHeight,
 		// addImage always writes x/y/w/h defaults, so remember which axes the caller actually set
@@ -1073,6 +1116,7 @@ function normalizeDeprecatedLineProps(
 export function addShapeDefinition(target: PresSlide | SlideLayout, shapeName: SHAPE_NAME, opts: ShapeProps): void {
 	const options = typeof opts === 'object' ? opts : {}
 	options.line = options.line || { type: 'none' }
+	resolveObjectImageFills(target, options)
 	const newObject: ISlideObject = {
 		_type: SLIDE_OBJECT_TYPES.text,
 		shape: shapeName || SHAPE_TYPE.RECTANGLE,
@@ -1109,6 +1153,8 @@ export function addShapeDefinition(target: PresSlide | SlideLayout, shapeName: S
 		targetAnchorPos: options.line.targetAnchorPos,
 		isConnector: options.line.isConnector || hasConnectorEnds,
 		curveadjust: options.line.curveadjust,
+		_sourceName: options.line._sourceName,
+		_targetName: options.line._targetName,
 	}
 	if (typeof options.line === 'object' && options.line.type !== 'none') options.line = newLineOpts
 
@@ -1185,7 +1231,8 @@ export function addTableDefinition(
 	// STEP 2: Transform `tableRows` into well-formatted TableCell's
 	// tableRows can be object or plain text array: `[{text:'cell 1'}, {text:'cell 2', options:{color:'ff0000'}}]` | `["cell 1", "cell 2"]`
 	const arrRows: TableCell[][] = []
-	const tableFillRid = registerTableCellImageFill(target, opt.fill)
+	if (isStructuredImageFill(opt.fill)) resolveImageFill(target, opt.fill)
+	const tableFillRid = isStructuredImageFill(opt.fill) ? undefined : registerTableCellImageFill(target, opt.fill)
 	tableRows.forEach(row => {
 		const newRow: TableCell[] = []
 
@@ -1234,9 +1281,13 @@ export function addTableDefinition(
 					}
 				})
 
-				const fillRid = registerTableCellImageFill(target, cellOpts.fill) ??
-					(cellOpts.fill ? undefined : tableFillRid)
-				if (fillRid) cellOpts._fillRid = fillRid
+				if (isStructuredImageFill(cellOpts.fill)) {
+					resolveImageFill(target, cellOpts.fill)
+				} else {
+					const fillRid = registerTableCellImageFill(target, cellOpts.fill) ??
+						(cellOpts.fill ? undefined : tableFillRid)
+					if (fillRid) cellOpts._fillRid = fillRid
+				}
 
 				// LAST:
 				newRow.push(newCell)
@@ -1431,6 +1482,7 @@ export function addTableDefinition(
  * @since: 1.0.0
  */
 export function addTextDefinition(target: PresSlide | SlideLayout, text: TextProps[], opts: TextPropsOptions, isPlaceholder: boolean): void {
+	resolveObjectImageFills(target, opts)
 	const newObject: ISlideObject = {
 		_type: isPlaceholder ? SLIDE_OBJECT_TYPES.placeholder : SLIDE_OBJECT_TYPES.text,
 		shape: (opts?.shape) || SHAPE_TYPE.RECTANGLE,
@@ -1730,6 +1782,7 @@ function makeGroupCollector (parent: PresSlide): PresSlide {
  * Child coordinates are relative to the group origin (`chOff` 0,0 / `chExt` = group size).
  */
 export function addGroupDefinition (target: PresSlide, opts: GroupProps, objects: ISlideObject[]): ISlideObject {
+	if (opts.fill) resolveImageFill(target, opts.fill)
 	const groupCount = target._slideObjects.filter(obj => obj._type === SLIDE_OBJECT_TYPES.group).length
 	const newObject: ISlideObject = {
 		_type: SLIDE_OBJECT_TYPES.group,
@@ -1740,6 +1793,7 @@ export function addGroupDefinition (target: PresSlide, opts: GroupProps, objects
 			h: opts.h ?? 1,
 			rotate: opts.rotate ?? 0,
 			shadow: opts.shadow ? correctShadowOptions(opts.shadow) : undefined,
+			fill: opts.fill,
 			objectName: opts.objectName ? encodeXmlEntities(opts.objectName) : `Group ${groupCount + 1}`,
 		},
 		_objects: objects,
@@ -1777,6 +1831,51 @@ export function createGroupBuilder (parent: PresSlide, objects: ISlideObject[]):
 			objects.push(...collector._slideObjects)
 			return builder
 		},
+		addConnector (options) {
+			const collector = makeGroupCollector(parent)
+			addConnectorDefinition(collector, options ?? {})
+			objects.push(...collector._slideObjects)
+			return builder
+		},
 	}
 	return builder
+}
+
+const CONNECTOR_PRESETS = new Set([
+	'line', 'straightConnector1',
+	'bentConnector2', 'bentConnector3', 'bentConnector4', 'bentConnector5',
+	'curvedConnector2', 'curvedConnector3', 'curvedConnector4', 'curvedConnector5',
+])
+
+/**
+ * Additive connector convenience: maps onto `addShape` + `line.isConnector`.
+ * `start`/`end` `objectName`s are resolved to `sourceId`/`targetId` at emit time.
+ */
+export function addConnectorDefinition (target: PresSlide | SlideLayout, opt: ConnectorProps): void {
+	const requested = opt.type && CONNECTOR_PRESETS.has(opt.type) ? opt.type : 'straightConnector1'
+	const shapeName = (requested === 'line' ? SHAPE_TYPE.LINE : requested) as SHAPE_NAME
+	const line: ShapeLineProps = {
+		...(opt.line ?? {}),
+		isConnector: true,
+		sourceId: opt.line?.sourceId,
+		targetId: opt.line?.targetId,
+		sourceAnchorPos: opt.start?.site ?? opt.line?.sourceAnchorPos,
+		targetAnchorPos: opt.end?.site ?? opt.line?.targetAnchorPos,
+		_sourceName: opt.start?.shape,
+		_targetName: opt.end?.shape,
+	}
+	addShapeDefinition(target, shapeName, {
+		x: opt.x,
+		y: opt.y,
+		w: opt.w,
+		h: opt.h,
+		objectName: opt.objectName,
+		rotate: opt.rotate,
+		flipH: opt.flipH,
+		flipV: opt.flipV,
+		fill: opt.fill,
+		shadow: opt.shadow,
+		styleRef: opt.styleRef,
+		line,
+	})
 }

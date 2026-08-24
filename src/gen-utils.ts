@@ -4,8 +4,8 @@
 
 import { parseXml } from '@rgrove/parse-xml'
 
-import { EMU, REGEX_HEX_COLOR, DEF_FONT_COLOR, DEF_TEXT_GLOW, ONEPT, SchemeColor, SCHEME_COLORS } from './core-enums'
-import { PresLayout, TextGlowProps, PresSlide, SlideLayout, ShapeFillProps, Color, ShapeLineProps, Coord, ShadowProps, ShapeGradientProps, ShapePatternProps, ModifiedThemeColor, ThemeProps, HexColor } from './core-interfaces'
+import { EMU, REGEX_HEX_COLOR, DEF_FONT_COLOR, DEF_TEXT_GLOW, ONEPT, SchemeColor, SCHEME_COLORS, TILE_ALIGNMENTS } from './core-enums'
+import { PresLayout, TextGlowProps, PresSlide, SlideLayout, ShapeFillProps, Color, ShapeLineProps, Coord, ShadowProps, ShapeGradientProps, ShapePatternProps, ShapeImageFillProps, ModifiedThemeColor, ThemeProps, HexColor } from './core-interfaces'
 
 /** debug namespace, used for both the log prefix and the `NODE_DEBUG` section name */
 const DEBUG_NS = 'pptxgenjs'
@@ -614,6 +614,25 @@ function createPatternFillElement (pattern: ShapePatternProps | undefined, fallb
 }
 
 /**
+ * Create a DrawingML `a:blipFill` for a picture fill (ECMA-376 20.1.8.14)
+ * - the image relationship is resolved when the object is created
+ */
+function createImageFillElement (image: ShapeImageFillProps, rId: number): string {
+	let mode = '<a:stretch><a:fillRect/></a:stretch>'
+	if (image.sizing === 'tile') {
+		const scale = typeof image.scale === 'number' && isFinite(image.scale) && image.scale > 0 ? Math.round(image.scale * 1000) : 100000
+		const rawAlgn = image.alignment ?? 'tl'
+		const algn = TILE_ALIGNMENTS.has(rawAlgn) ? rawAlgn : 'tl'
+		if (image.alignment && !TILE_ALIGNMENTS.has(image.alignment)) {
+			console.warn(`[pptxgenjs] unknown tile alignment "${String(image.alignment)}" - "tl" used instead`)
+		}
+		mode = `<a:tile tx="0" ty="0" sx="${scale}" sy="${scale}" flip="none" algn="${algn}"/>`
+	}
+
+	return `<a:blipFill rotWithShape="${image.rotateWithShape === false ? '0' : '1'}"><a:blip r:embed="rId${rId}"/>${mode}</a:blipFill>`
+}
+
+/**
  * Create color selection
  * @param {Color | ShapeFillProps | ShapeLineProps} props fill props
  * @returns XML string
@@ -632,6 +651,7 @@ export function genXmlColorSelection (props: Color | ShapeFillProps | ShapeLineP
 			colorVal = props
 		} else {
 			if (props.type) fillType = props.type
+			else if (props.image?._rId || props._rId) fillType = 'image'
 			if (props.color) colorVal = props.color
 			if (props.alpha) internalElements += `<a:alpha val="${Math.round((100 - props.alpha) * 1000)}"/>` // DEPRECATED: @deprecated v3.3.0
 			if (props.transparency) internalElements += `<a:alpha val="${Math.round((100 - props.transparency) * 1000)}"/>`
@@ -654,6 +674,19 @@ export function genXmlColorSelection (props: Color | ShapeFillProps | ShapeLineP
 					typeof props === 'string' || isModifiedThemeColor(props) ? undefined : props.pattern,
 					typeof colorVal === 'string' ? colorVal : String(colorVal.baseColor),
 				)
+				break
+			case 'image': {
+				const image = typeof props === 'string' || isModifiedThemeColor(props) ? undefined : props.image
+				const rId = image?._rId ?? (typeof props === 'string' || isModifiedThemeColor(props) ? undefined : props._rId)
+				if (rId) {
+					outText += createImageFillElement(image ?? {}, rId)
+				} else {
+					console.warn('[pptxgenjs] `fill.type:"image"` requires `fill.image.data` or `fill.image.path` - fill omitted')
+				}
+				break
+			}
+			case 'group':
+				outText += '<a:grpFill/>'
 				break
 			case 'none':
 				outText += '<a:noFill/>'
@@ -690,8 +723,8 @@ export function correctShadowOptions (ShadowProps: ShadowProps): ShadowProps | u
 	ShadowProps = { ...ShadowProps }
 
 	// OPT: `type`
-	if (ShadowProps.type !== 'outer' && ShadowProps.type !== 'inner' && ShadowProps.type !== 'none') {
-		console.warn('Warning: shadow.type options are `outer`, `inner` or `none`.')
+	if (ShadowProps.type !== 'outer' && ShadowProps.type !== 'inner' && ShadowProps.type !== 'none' && ShadowProps.type !== 'preset') {
+		console.warn('Warning: shadow.type options are `outer`, `inner`, `preset` or `none`.')
 		ShadowProps.type = 'outer'
 	}
 

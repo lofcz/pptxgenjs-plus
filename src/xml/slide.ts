@@ -15,6 +15,10 @@ import {
 import {
 	BlurProps,
 	Coord,
+	EffectDagProps,
+	FillOverlayProps,
+	ImageAlphaEffectProps,
+	ImageRecolorProps,
 	ISlideObject,
 	ObjectOptions,
 	PresLayout,
@@ -23,6 +27,7 @@ import {
 	SectionProps,
 	ShadowProps,
 	ShapeLineProps,
+	ShapeStyleProps,
 	SlideLayout,
 	SoftEdgeProps,
 	TableCell,
@@ -159,15 +164,22 @@ function genXmlLine (line: ShapeLineProps): string {
  * @note pure - unit conversion must NOT mutate the caller's options (issue #20)
  */
 function genXmlShadowElement (shadow: ShadowProps): string {
-	const type = shadow.type === 'inner' ? 'inner' : 'outer'
-	const blur = valToPts(shadow.blur ?? 8)
 	const offset = valToPts(shadow.offset ?? 4)
 	const angle = Math.round((shadow.angle ?? 270) * 60000)
 	const opacity = Math.round((shadow.opacity ?? 0.75) * 100000)
 	const color = shadow.color || DEF_TEXT_SHADOW.color
+	const colorXml = `<a:srgbClr val="${color}"><a:alpha val="${opacity}"/></a:srgbClr>`
+
+	if (shadow.type === 'preset') {
+		if (!shadow.preset) return ''
+		return `<a:prstShdw prst="${shadow.preset}" dist="${offset}" dir="${angle}">${colorXml}</a:prstShdw>`
+	}
+
+	const type = shadow.type === 'inner' ? 'inner' : 'outer'
+	const blur = valToPts(shadow.blur ?? 8)
 	const attrs = type === 'outer' ? 'sx="100000" sy="100000" kx="0" ky="0" algn="bl" rotWithShape="0"' : ''
 
-	return `<a:${type}Shdw ${attrs} blurRad="${blur}" dist="${offset}" dir="${angle}"><a:srgbClr val="${color}"><a:alpha val="${opacity}"/></a:srgbClr></a:${type}Shdw>`
+	return `<a:${type}Shdw ${attrs} blurRad="${blur}" dist="${offset}" dir="${angle}">${colorXml}</a:${type}Shdw>`
 }
 
 /**
@@ -197,6 +209,8 @@ export type ShapeEffectLstOptions = {
 	softEdge?: SoftEdgeProps
 	reflection?: ReflectionProps
 	blur?: BlurProps
+	fillOverlay?: FillOverlayProps
+	effectDag?: EffectDagProps
 }
 
 /**
@@ -209,32 +223,130 @@ function genXmlBlurElement (blur: BlurProps): string {
 }
 
 /**
- * Create the shape/image `a:effectLst` block (blur + glow + shadow + reflection + softEdge).
- * Child order follows ECMA-376 `CT_EffectList`: blur, glow, innerShdw, outerShdw, reflection, softEdge.
+ * Create `a:fillOverlay` (CT_FillOverlayEffect). `@blend` and a fill are both required.
+ */
+function genXmlFillOverlayElement (overlay: FillOverlayProps): string {
+	if (!overlay.blend || !overlay.fill) return ''
+	const fill = genXmlColorSelection(overlay.fill)
+	return fill ? `<a:fillOverlay blend="${overlay.blend}">${fill}</a:fillOverlay>` : ''
+}
+
+/**
+ * Create the shape/image effect block (blur + fillOverlay + glow + shadow + reflection + softEdge).
+ * Child order follows ECMA-376 `CT_EffectList`: blur, fillOverlay, glow, innerShdw, outerShdw,
+ * prstShdw, reflection, softEdge. `effectDag` replaces `effectLst` (EG_EffectProperties choice).
  * @note pure - unit conversion must NOT be written back to the caller's options object (issue #20)
  */
 function genXmlEffectLst (opts: ShapeEffectLstOptions): string {
 	const parts: string[] = []
 
 	if (opts.blur && typeof opts.blur.radius === 'number') parts.push(genXmlBlurElement(opts.blur))
+	if (opts.fillOverlay) {
+		const overlay = genXmlFillOverlayElement(opts.fillOverlay)
+		if (overlay) parts.push(overlay)
+	}
 
 	const resolvedGlow = resolveGlowOptions(opts.glow)
 	if (resolvedGlow) parts.push(createGlowElement(resolvedGlow))
 
 	const shadow = opts.shadow
 	if (shadow && shadow.type !== 'none') {
-		parts.push(genXmlShadowElement(shadow))
+		const shadowXml = genXmlShadowElement(shadow)
+		if (shadowXml) parts.push(shadowXml)
 	}
 
 	if (opts.reflection) parts.push(genXmlReflectionElement(opts.reflection))
 	if (opts.softEdge) parts.push(genXmlSoftEdgeElement(opts.softEdge))
 
 	if (!parts.length) return ''
-	return `<a:effectLst>${parts.join('')}</a:effectLst>`
+	const xml = parts.join('')
+	if (opts.effectDag) return `<a:effectDag type="${opts.effectDag.type === 'tree' ? 'tree' : 'sib'}">${xml}</a:effectDag>`
+	return `<a:effectLst>${xml}</a:effectLst>`
+}
+
+/**
+ * Theme style references for a shape (`p:style`).
+ * CT_ShapeStyle requires all four children; an unset property references nothing (`idx="0"` / `none`).
+ */
+function genXmlShapeStyle (style?: ShapeStyleProps): string {
+	if (!style) return ''
+
+	let color = style.color ?? 'accent1'
+	if (color === 'phClr') {
+		console.warn('[pptxgenjs] `styleRef.color` cannot be `phClr` - it is the placeholder a theme reference resolves, not a color. Using `accent1`.')
+		color = 'accent1'
+	}
+	let fontColor = style.fontColor
+	if (fontColor === 'phClr') {
+		console.warn('[pptxgenjs] `styleRef.fontColor` cannot be `phClr` - using `lt1`.')
+		fontColor = undefined
+	}
+
+	const idx = (value?: number): number => (typeof value === 'number' && isFinite(value) && value > 0 ? Math.round(value) : 0)
+	const matrixColor = createColorElement(color)
+	const fontColorXml = fontColor ? createColorElement(fontColor) : '<a:schemeClr val="lt1"/>'
+
+	return (
+		'<p:style>' +
+		`<a:lnRef idx="${idx(style.line)}">${matrixColor}</a:lnRef>` +
+		`<a:fillRef idx="${idx(style.fill)}">${matrixColor}</a:fillRef>` +
+		`<a:effectRef idx="${idx(style.effect)}">${matrixColor}</a:effectRef>` +
+		`<a:fontRef idx="${style.font === 'major' || style.font === 'minor' ? style.font : 'none'}">${fontColorXml}</a:fontRef>` +
+		'</p:style>'
+	)
+}
+
+/**
+ * Recolor and correction effects for an image's `a:blip`.
+ */
+function genXmlBlipRecolor (recolor?: ImageRecolorProps): string {
+	if (!recolor) return ''
+	let xml = ''
+
+	if (Array.isArray(recolor.duotone)) {
+		if (recolor.duotone.length === 2) xml += `<a:duotone>${recolor.duotone.map(color => createColorElement(color)).join('')}</a:duotone>`
+		else console.warn(`[pptxgenjs] image \`recolor.duotone\` needs exactly two colors - ${recolor.duotone.length} given, effect omitted`)
+	}
+	if (recolor.grayscale === true) xml += '<a:grayscl/>'
+
+	const bright = typeof recolor.brightness === 'number' && isFinite(recolor.brightness) ? Math.round(Math.min(100, Math.max(-100, recolor.brightness)) * 1000) : undefined
+	const contrast = typeof recolor.contrast === 'number' && isFinite(recolor.contrast) ? Math.round(Math.min(100, Math.max(-100, recolor.contrast)) * 1000) : undefined
+	if (bright !== undefined || contrast !== undefined) {
+		xml += `<a:lum${bright !== undefined ? ` bright="${bright}"` : ''}${contrast !== undefined ? ` contrast="${contrast}"` : ''}/>`
+	}
+
+	if (typeof recolor.blackWhiteThreshold === 'number' && isFinite(recolor.blackWhiteThreshold)) {
+		xml += `<a:biLevel thresh="${Math.round(Math.min(100, Math.max(0, recolor.blackWhiteThreshold)) * 1000)}"/>`
+	}
+
+	if (recolor.colorChange) {
+		if (recolor.colorChange.from && recolor.colorChange.to) {
+			const useA = recolor.colorChange.useAlpha === false ? ' useA="0"' : ''
+			xml += `<a:clrChange${useA}><a:clrFrom>${createColorElement(recolor.colorChange.from)}</a:clrFrom><a:clrTo>${createColorElement(recolor.colorChange.to)}</a:clrTo></a:clrChange>`
+		} else {
+			console.warn('[pptxgenjs] image `recolor.colorChange` needs both `from` and `to` - effect omitted')
+		}
+	}
+
+	return xml
+}
+
+/**
+ * Alpha + recolor effects for an image's `a:blip`.
+ */
+function genXmlBlipEffects (transparency?: number, alpha?: ImageAlphaEffectProps, recolor?: ImageRecolorProps): string {
+	let xml = transparency ? `<a:alphaModFix amt="${Math.round((100 - transparency) * 1000)}"/>` : ''
+	xml += genXmlBlipRecolor(recolor)
+	if (!alpha) return xml
+	if (typeof alpha.replace === 'number' && isFinite(alpha.replace)) xml += `<a:alphaRepl a="${Math.round(Math.min(100, Math.max(0, alpha.replace)) * 1000)}"/>`
+	if (alpha.invert === true) xml += '<a:alphaInv/>'
+	if (alpha.floor === true) xml += '<a:alphaFloor/>'
+	if (alpha.ceiling === true) xml += '<a:alphaCeiling/>'
+	return xml
 }
 
 /** Shape id → layout box used to auto-size connectors (ZentoSoft) */
-type ShapeIdCoord = { id: number, position: { x?: Coord, y?: Coord, w?: Coord, h?: Coord } }
+type ShapeIdCoord = { id: number, objectName?: string, position: { x?: Coord, y?: Coord, w?: Coord, h?: Coord } }
 
 function findShapeCoord (list: ShapeIdCoord[], id: number | undefined): ShapeIdCoord | undefined {
 	if (id == null) return undefined
@@ -270,6 +382,19 @@ function anchorPointInches (
  * When a connector references shapes with numeric inch positions + rect anchors,
  * compute the line's x/y/w/h and flip flags (ZentoSoft auto-layout).
  */
+function resolveConnectorObjectNames (line: ShapeLineProps, coordinates: ShapeIdCoord[]): void {
+	if (line._sourceName) {
+		const found = coordinates.find(item => item.objectName === line._sourceName)
+		if (found) line.sourceId = found.id
+		else console.warn(`[pptxgenjs] connector start shape "${line._sourceName}" not found - attachment omitted`)
+	}
+	if (line._targetName) {
+		const found = coordinates.find(item => item.objectName === line._targetName)
+		if (found) line.targetId = found.id
+		else console.warn(`[pptxgenjs] connector end shape "${line._targetName}" not found - attachment omitted`)
+	}
+}
+
 function applyConnectorAutoLayout (
 	line: ShapeLineProps,
 	coordinates: ShapeIdCoord[],
@@ -441,7 +566,8 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 
 	// STEP 1: Add background color/image (ensure only a single `<p:bg>` tag is created, ex: when master-baskground has both `color` and `path`)
 	if (slide._bkgdImgRid) {
-		strSlideXml += `<p:bg><p:bgPr><a:blipFill dpi="0" rotWithShape="1"><a:blip r:embed="rId${slide._bkgdImgRid}"><a:lum/></a:blip><a:srcRect/><a:stretch><a:fillRect/></a:stretch></a:blipFill><a:effectLst/></p:bgPr></p:bg>`
+		const bkgdEffects = genXmlBlipRecolor(slide.background?.recolor)
+		strSlideXml += `<p:bg><p:bgPr><a:blipFill dpi="0" rotWithShape="1"><a:blip r:embed="rId${slide._bkgdImgRid}">${bkgdEffects || '<a:lum/>'}</a:blip><a:srcRect/><a:stretch><a:fillRect/></a:stretch></a:blipFill><a:effectLst/></p:bgPr></p:bg>`
 	} else if (
 		slide.background?.color ||
 		(slide.background?.type === 'gradient' && slide.background.gradient) ||
@@ -479,6 +605,7 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 			slideItemObj.options.sId = shapeId
 			shapeCoordinates.push({
 				id: shapeId,
+				objectName: slideItemObj.options.objectName,
 				position: {
 					x: slideItemObj.options.x,
 					y: slideItemObj.options.y,
@@ -504,6 +631,9 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 			}
 
 			// A: Geometry — connectors may auto-size from source/target shape boxes (ZentoSoft)
+			if (slideItemObj.options.line?.isConnector) {
+				resolveConnectorObjectNames(slideItemObj.options.line, shapeCoordinates)
+			}
 			const connectorLayout =
 				slideItemObj.options.line?.isConnector
 					? applyConnectorAutoLayout(slideItemObj.options.line, shapeCoordinates, slide._presLayout)
@@ -830,7 +960,12 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					if (isConnector) {
 						strSlideXml += '<p:cxnSp>'
 						strSlideXml += `<p:nvCxnSpPr><p:cNvPr id="${shapeId}" name="${slideItemObj.options.objectName}"></p:cNvPr>`
-						strSlideXml += `<p:cNvCxnSpPr><a:stCxn id="${slideItemObj.options.line?.sourceId}" idx="${slideItemObj.options.line?.sourceAnchorPos ?? 0}"/><a:endCxn id="${slideItemObj.options.line?.targetId}" idx="${slideItemObj.options.line?.targetAnchorPos ?? 0}"/></p:cNvCxnSpPr>`
+						const stId = slideItemObj.options.line?.sourceId
+						const endId = slideItemObj.options.line?.targetId
+						strSlideXml += '<p:cNvCxnSpPr>'
+						if (stId != null) strSlideXml += `<a:stCxn id="${stId}" idx="${slideItemObj.options.line?.sourceAnchorPos ?? 0}"/>`
+						if (endId != null) strSlideXml += `<a:endCxn id="${endId}" idx="${slideItemObj.options.line?.targetAnchorPos ?? 0}"/>`
+						strSlideXml += '</p:cNvCxnSpPr>'
 						strSlideXml += `${genXmlNvPr(slideItemObj.options, '', [nvPrModIdExt(slideItemObj.options.modId)])}</p:nvCxnSpPr><p:spPr>`
 					} else {
 						strSlideXml += '<p:sp>'
@@ -885,12 +1020,14 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					}
 
 					// Option: FILL
-					strSlideXml += slideItemObj.options.fill ? genXmlColorSelection(slideItemObj.options.fill) : '<a:noFill/>'
+					// With a fillRef and no explicit fill, omit the fill element so the theme inherits
+					if (slideItemObj.options.fill) strSlideXml += genXmlColorSelection(slideItemObj.options.fill)
+					else if (!slideItemObj.options.styleRef?.fill) strSlideXml += '<a:noFill/>'
 
 					// shape Type: LINE: line color
 					if (slideItemObj.options.line) strSlideXml += genXmlLine(slideItemObj.options.line)
 
-					// EFFECTS: shadow / glow / softEdge / reflection
+					// EFFECTS: shadow / glow / softEdge / reflection / fillOverlay / blur
 					// REF: @see http://officeopenxml.com/drwSp-effects.php
 					strSlideXml += genXmlEffectLst({
 						shadow: slideItemObj.options.shadow,
@@ -898,10 +1035,15 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 						softEdge: slideItemObj.options.softEdge,
 						reflection: slideItemObj.options.reflection,
 						blur: slideItemObj.options.blur,
+						fillOverlay: slideItemObj.options.fillOverlay,
+						effectDag: slideItemObj.options.effectDag,
 					})
 
 					// B: Close shape Properties
 					strSlideXml += '</p:spPr>'
+
+					// `p:style` follows `p:spPr` in CT_Shape / CT_Connector
+					strSlideXml += genXmlShapeStyle(slideItemObj.options.styleRef)
 
 					if (isConnector) {
 					// Connectors have no text body
@@ -940,7 +1082,7 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					(slide._relsMedia || []).filter(rel => rel.rId === slideItemObj.imageRid)[0].extn === 'svg'
 					) {
 						strSlideXml += `<a:blip r:embed="rId${(slideItemObj.imageRid ?? 0) - 1}">`
-						strSlideXml += slideItemObj.options.transparency ? ` <a:alphaModFix amt="${Math.round((100 - slideItemObj.options.transparency) * 1000)}"/>` : ''
+						strSlideXml += genXmlBlipEffects(slideItemObj.options.transparency, slideItemObj.options.alphaEffects, slideItemObj.options.recolor)
 						strSlideXml += ' <a:extLst>'
 						strSlideXml += '  <a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}">'
 						strSlideXml += `   <asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="rId${slideItemObj.imageRid}"/>`
@@ -949,7 +1091,7 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 						strSlideXml += '</a:blip>'
 					} else {
 						strSlideXml += `<a:blip r:embed="rId${slideItemObj.imageRid}">`
-						strSlideXml += slideItemObj.options.transparency ? `<a:alphaModFix amt="${Math.round((100 - slideItemObj.options.transparency) * 1000)}"/>` : ''
+						strSlideXml += genXmlBlipEffects(slideItemObj.options.transparency, slideItemObj.options.alphaEffects, slideItemObj.options.recolor)
 						strSlideXml += '</a:blip>'
 					}
 					if (sizing?.type) {
@@ -1004,15 +1146,18 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					// OUTLINE: picture border/frame (issue #35)
 					if (slideItemObj.options.line) strSlideXml += genXmlLine(slideItemObj.options.line)
 
-					// EFFECTS: shadow / glow / softEdge / reflection
+					// EFFECTS: shadow / glow / softEdge / reflection / fillOverlay / blur
 					strSlideXml += genXmlEffectLst({
 						shadow: slideItemObj.options.shadow,
 						glow: slideItemObj.options.glow,
 						softEdge: slideItemObj.options.softEdge,
 						reflection: slideItemObj.options.reflection,
 						blur: slideItemObj.options.blur,
+						fillOverlay: slideItemObj.options.fillOverlay,
+						effectDag: slideItemObj.options.effectDag,
 					})
 					strSlideXml += '</p:spPr>'
+					strSlideXml += genXmlShapeStyle(slideItemObj.options.styleRef)
 					strSlideXml += '</p:pic>'
 					break
 
@@ -1180,12 +1325,15 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					strSlideXml += `<a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/>`
 					strSlideXml += `<a:chOff x="0" y="0"/><a:chExt cx="${cx}" cy="${cy}"/>`
 					strSlideXml += '</a:xfrm>'
+					if (slideItemObj.options.fill) strSlideXml += genXmlColorSelection(slideItemObj.options.fill)
 					strSlideXml += genXmlEffectLst({
 						shadow: slideItemObj.options.shadow,
 						glow: slideItemObj.options.glow,
 						softEdge: slideItemObj.options.softEdge,
 						reflection: slideItemObj.options.reflection,
 						blur: slideItemObj.options.blur,
+						fillOverlay: slideItemObj.options.fillOverlay,
+						effectDag: slideItemObj.options.effectDag,
 					})
 					strSlideXml += '</p:grpSpPr>'
 					renderObjectList(slideItemObj._objects ?? [])

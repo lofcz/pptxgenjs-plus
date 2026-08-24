@@ -547,6 +547,7 @@ export default class PptxGenJS implements IPresentationProps {
 			addTable: notOnMaster,
 			addText: notOnMaster,
 			addGroup: notOnMaster,
+			addConnector: notOnMaster,
 			addWordArt: notOnMaster,
 			addTransition: notOnMaster,
 			addAnimation: notOnMaster,

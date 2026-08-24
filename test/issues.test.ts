@@ -3507,3 +3507,188 @@ test('OMML: malformed omml option throws instead of writing a corrupt package', 
 	const xml = await readPart(await writeZip(pptx3), 'ppt/slides/slide1.xml')
 	assert.ok(xml.includes('a&lt;b&amp;c'), 'valid OMML was rejected or mangled')
 })
+
+test('Neoma fills/fx: fillOverlay, prstShdw, effectDag, blip alpha effects and group fill', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addShape(pptx.ShapeType.rect, {
+		x: 0.5, y: 0.5, w: 2, h: 1, fill: { color: 'CCCCCC' },
+		blur: { radius: 4, grow: false },
+		fillOverlay: { blend: 'mult', fill: { color: 'FF0000', transparency: 50 } },
+		glow: { size: 5, color: '00FF00', opacity: 0.4 },
+		shadow: { type: 'outer', color: '000000' },
+		reflection: { blur: 2 },
+		softEdge: { radius: 3 },
+	})
+	slide.addShape(pptx.ShapeType.rect, { x: 3, y: 0.5, w: 2, h: 1, shadow: { type: 'preset', preset: 'shdw7', color: '333333' } })
+	slide.addShape(pptx.ShapeType.rect, { x: 5.5, y: 0.5, w: 2, h: 1, glow: { size: 4, color: 'FF0000', opacity: 0.5 }, effectDag: { type: 'tree' } })
+	slide.addShape(pptx.ShapeType.rect, { x: 0.5, y: 2, w: 2, h: 1, fill: { type: 'group' } })
+	slide.addShape(pptx.ShapeType.rect, { x: 3, y: 2, w: 2, h: 1, shadow: { type: 'preset', color: '333333' } })
+	slide.addShape(pptx.ShapeType.rect, { x: 5.5, y: 2, w: 2, h: 1, fillOverlay: { blend: 'over' } as never })
+	slide.addShape(pptx.ShapeType.rect, { x: 8, y: 2, w: 1, h: 1, fillOverlay: { fill: { color: '00FF00' } } as never })
+	slide.addImage({ data: PNG_4x2, x: 0.5, y: 3.5, w: 1, h: 0.5, transparency: 20, alphaEffects: { replace: 60, invert: true, floor: true, ceiling: true } })
+	slide.addImage({ data: PNG_4x2, x: 2, y: 3.5, w: 1, h: 0.5, alphaEffects: { replace: 150 } })
+
+	const xml = await readPart(await writeZip(pptx), 'ppt/slides/slide1.xml')
+	const lists = xml.match(/<a:effectLst>[\s\S]*?<\/a:effectLst>/g) ?? []
+	assert.ok(lists.length >= 2, `expected effect lists, got ${lists.length}`)
+
+	const all = lists[0]
+	assert.ok(all.includes('<a:blur rad="50800" grow="0"/>'), `blur wrong: ${all}`)
+	assert.ok(all.includes('<a:fillOverlay blend="mult"><a:solidFill><a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr></a:solidFill></a:fillOverlay>'), `fillOverlay wrong: ${all}`)
+	const seq = ['<a:blur', '<a:fillOverlay', '<a:glow', '<a:outerShdw', '<a:reflection', '<a:softEdge'].map(tag => all.indexOf(tag))
+	assert.ok(seq.every(idx => idx > -1), `an effect is missing: ${seq.join(',')}`)
+	assert.deepEqual(seq, [...seq].sort((a, b) => a - b), `CT_EffectList child order violated: ${seq.join(',')}`)
+
+	assert.ok(xml.includes('<a:prstShdw prst="shdw7" dist="50800" dir="16200000"><a:srgbClr val="333333"><a:alpha val="75000"/></a:srgbClr></a:prstShdw>'), 'prstShdw missing')
+	assert.equal((xml.match(/<a:prstShdw/g) ?? []).length, 1, 'a preset shadow without a preset name was emitted')
+	assert.equal((xml.match(/<a:fillOverlay/g) ?? []).length, 1, 'a fill overlay missing its blend mode or its fill was emitted')
+	assert.ok(!xml.includes('blend="undefined"'), 'a fill overlay was emitted without a blend mode')
+
+	const dag = /<a:effectDag[\s\S]*?<\/a:effectDag>/.exec(xml)?.[0] ?? ''
+	assert.ok(dag.startsWith('<a:effectDag type="tree">') && dag.includes('<a:glow'), `effectDag wrong: ${dag}`)
+	const dagShape = /<p:sp>(?:(?!<\/p:sp>)[\s\S])*<a:effectDag[\s\S]*?<\/p:sp>/.exec(xml)?.[0] ?? ''
+	assert.ok(dagShape && !dagShape.includes('<a:effectLst>'), 'a shape emitted both an effectDag and an effectLst')
+
+	assert.ok(xml.includes('<a:grpFill/>'), 'group fill missing')
+
+	const blips = xml.match(/<a:blip [\s\S]*?<\/a:blip>/g) ?? []
+	assert.ok(blips[0].includes('<a:alphaModFix amt="80000"/><a:alphaRepl a="60000"/><a:alphaInv/><a:alphaFloor/><a:alphaCeiling/>'), `blip alpha effects wrong: ${blips[0]}`)
+	assert.ok(blips[1].includes('<a:alphaRepl a="100000"/>'), `alphaRepl not clamped: ${blips[1]}`)
+	for (const list of lists) assert.ok(!/alphaRepl|alphaInv|alphaFloor|alphaCeiling/.test(list), 'an alpha effect leaked into a:effectLst')
+
+	const imgOnly = new pptxgen()
+	imgOnly.addSlide().addImage({ data: PNG_4x2, x: 1, y: 1, w: 1, h: 0.5, glow: { size: 5, color: 'FF0000', opacity: 0.5 }, softEdge: { radius: 3 }, reflection: { blur: 2 } })
+	const picXml = await readPart(await writeZip(imgOnly), 'ppt/slides/slide1.xml')
+	const pic = /<p:pic>[\s\S]*?<\/p:pic>/.exec(picXml)?.[0] ?? ''
+	assert.ok(pic.includes('<a:glow') && pic.includes('<a:softEdge') && pic.includes('<a:reflection'), `image effects never reached the pic: ${pic}`)
+
+	const bare = new pptxgen()
+	bare.addSlide().addShape(pptx.ShapeType.rect, { x: 1, y: 1, w: 2, h: 1, fill: { color: 'CCCCCC' } })
+	const bareXml = await readPart(await writeZip(bare), 'ppt/slides/slide1.xml')
+	for (const tag of ['<a:blur', '<a:fillOverlay', '<a:prstShdw', '<a:effectDag', '<a:grpFill', '<a:alphaRepl']) {
+		assert.ok(!bareXml.includes(tag), `default shape gained ${tag}`)
+	}
+})
+
+test('Neoma fills/fx: picture recolor and correction effects', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addImage({ data: PNG_4x2, x: 0.5, y: 0.5, w: 1, h: 0.5, recolor: { duotone: ['000000', 'accent1'], brightness: 20, contrast: -10 } })
+	slide.addImage({ data: PNG_4x2, x: 2, y: 0.5, w: 1, h: 0.5, recolor: { grayscale: true, blackWhiteThreshold: 50 } })
+	slide.addImage({ data: PNG_4x2, x: 3.5, y: 0.5, w: 1, h: 0.5, recolor: { colorChange: { from: 'FFFFFF', to: '00FF00', useAlpha: false } } })
+	slide.addImage({ data: PNG_4x2, x: 5, y: 0.5, w: 1, h: 0.5, transparency: 30, recolor: { brightness: 150 } })
+	slide.addImage({ data: PNG_4x2, x: 6.5, y: 0.5, w: 1, h: 0.5, recolor: { duotone: ['000000'] as never, colorChange: { from: 'FFFFFF' } as never } })
+
+	const xml = await readPart(await writeZip(pptx), 'ppt/slides/slide1.xml')
+	const blips = xml.match(/<a:blip [\s\S]*?<\/a:blip>/g) ?? []
+	assert.equal(blips.length, 5, `expected five blips, got ${blips.length}`)
+
+	assert.ok(blips[0].includes('<a:duotone><a:srgbClr val="000000"/><a:schemeClr val="accent1"/></a:duotone>'), `duotone wrong: ${blips[0]}`)
+	assert.ok(blips[0].includes('<a:lum bright="20000" contrast="-10000"/>'), `lum wrong: ${blips[0]}`)
+	assert.ok(blips[1].includes('<a:grayscl/>'), 'grayscl missing')
+	assert.ok(blips[1].includes('<a:biLevel thresh="50000"/>'), `biLevel wrong: ${blips[1]}`)
+	assert.ok(blips[2].includes('<a:clrChange useA="0"><a:clrFrom><a:srgbClr val="FFFFFF"/></a:clrFrom><a:clrTo><a:srgbClr val="00FF00"/></a:clrTo></a:clrChange>'), `clrChange wrong: ${blips[2]}`)
+	assert.ok(blips[3].includes('<a:alphaModFix amt="70000"/>') && blips[3].includes('<a:lum bright="100000"/>'), `clamping or coexistence wrong: ${blips[3]}`)
+	assert.ok(!blips[4].includes('duotone') && !blips[4].includes('clrChange'), `an incomplete effect was emitted: ${blips[4]}`)
+
+	const bg = new pptxgen()
+	const bgSlide = bg.addSlide()
+	bgSlide.background = { data: PNG_4x2, recolor: { grayscale: true, brightness: -20 } }
+	bgSlide.addText('bg', { x: 1, y: 1 })
+	const plain = bg.addSlide()
+	plain.background = { data: PNG_4x2 }
+	plain.addText('plain', { x: 1, y: 1 })
+	assert.ok((await readPart(await writeZip(bg), 'ppt/slides/slide1.xml')).includes('<a:grayscl/><a:lum bright="-20000"/></a:blip>'), 'background recolour missing')
+	assert.ok((await readPart(await writeZip(bg), 'ppt/slides/slide2.xml')).includes('<a:blip r:embed="rId1"><a:lum/></a:blip>'), 'the default background blip changed')
+
+	const bare = new pptxgen()
+	bare.addSlide().addImage({ data: PNG_4x2, x: 1, y: 1, w: 1, h: 0.5 })
+	const bareXml = await readPart(await writeZip(bare), 'ppt/slides/slide1.xml')
+	for (const tag of ['<a:duotone', '<a:grayscl', '<a:lum', '<a:biLevel', '<a:clrChange']) {
+		assert.ok(!bareXml.includes(tag), `a default image gained ${tag}`)
+	}
+})
+
+test('Neoma fills/fx: shapes and pictures emit p:style theme references', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addShape(pptx.ShapeType.rect, { x: 0.5, y: 0.5, w: 2, h: 1, styleRef: { line: 1, fill: 3, effect: 2, font: 'minor' } })
+	slide.addShape(pptx.ShapeType.rect, { x: 3, y: 0.5, w: 2, h: 1, styleRef: { fill: 1 }, fill: { color: 'FF0000' } })
+	slide.addShape(pptx.ShapeType.rect, { x: 5.5, y: 0.5, w: 2, h: 1, styleRef: { effect: 1, color: 'phClr' } })
+	slide.addImage({ data: PNG_4x2, x: 0.5, y: 2, w: 1, h: 0.5, styleRef: { line: 2, color: 'accent3' } })
+
+	const xml = await readPart(await writeZip(pptx), 'ppt/slides/slide1.xml')
+	const shapes = xml.match(/<p:sp>[\s\S]*?<\/p:sp>/g) ?? []
+	assert.equal(shapes.length, 3, `expected three shapes, got ${shapes.length}`)
+
+	assert.ok(shapes[0].includes(
+		'<p:style><a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef>' +
+		'<a:fillRef idx="3"><a:schemeClr val="accent1"/></a:fillRef>' +
+		'<a:effectRef idx="2"><a:schemeClr val="accent1"/></a:effectRef>' +
+		'<a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></p:style>'
+	), `p:style wrong: ${shapes[0]}`)
+
+	const order = ['</p:spPr>', '<p:style>', '</p:style>', '<p:txBody>'].map(tag => shapes[0].indexOf(tag))
+	assert.ok(order.every(idx => idx > -1), `a p:sp child is missing: ${order.join(',')}`)
+	assert.deepEqual(order, [...order].sort((a, b) => a - b), `CT_Shape child order violated: ${order.join(',')}`)
+
+	const spPr0 = /<p:spPr>[\s\S]*?<\/p:spPr>/.exec(shapes[0])?.[0] ?? ''
+	assert.ok(!spPr0.includes('<a:noFill/>') && !spPr0.includes('<a:solidFill>'), `a referenced fill must be left to the theme: ${spPr0}`)
+
+	const spPr1 = /<p:spPr>[\s\S]*?<\/p:spPr>/.exec(shapes[1])?.[0] ?? ''
+	assert.ok(spPr1.includes('<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>'), 'an explicit fill was dropped')
+	assert.ok(shapes[1].includes('<a:lnRef idx="0">') && shapes[1].includes('<a:effectRef idx="0">') && shapes[1].includes('<a:fontRef idx="none">'), `unset refs wrong: ${shapes[1]}`)
+
+	assert.ok(shapes[2].includes('<a:effectRef idx="1"><a:schemeClr val="accent1"/></a:effectRef>'), 'phClr was not rejected')
+	assert.ok(!xml.includes('val="phClr"'), 'phClr reached the output')
+	assert.ok((/<p:spPr>[\s\S]*?<\/p:spPr>/.exec(shapes[2])?.[0] ?? '').includes('<a:noFill/>'), 'the noFill default was suppressed without a fill reference')
+
+	const pic = /<p:pic>[\s\S]*?<\/p:pic>/.exec(xml)?.[0] ?? ''
+	assert.ok(pic.includes('<a:lnRef idx="2"><a:schemeClr val="accent3"/></a:lnRef>'), `picture p:style wrong: ${pic}`)
+	const picOrder = ['</p:spPr>', '<p:style>', '</p:pic>'].map(tag => pic.indexOf(tag))
+	assert.deepEqual(picOrder, [...picOrder].sort((a, b) => a - b), `CT_Picture child order violated: ${picOrder.join(',')}`)
+
+	const bare = new pptxgen()
+	bare.addSlide().addShape(pptx.ShapeType.rect, { x: 1, y: 1, w: 2, h: 1 })
+	const bareXml = await readPart(await writeZip(bare), 'ppt/slides/slide1.xml')
+	assert.ok(!bareXml.includes('<p:style>'), 'default shape gained a p:style')
+	assert.ok(bareXml.includes('<a:noFill/>'), 'default shape lost its noFill')
+})
+
+test('Neoma fills/fx: addConnector maps onto existing connector fields via objectName', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addShape(pptx.ShapeType.rect, {
+		objectName: 'BoxA',
+		x: 0.5, y: 1, w: 2, h: 1,
+		fill: { color: '4472C4' },
+	})
+	slide.addShape(pptx.ShapeType.rect, {
+		objectName: 'BoxB',
+		x: 5, y: 2, w: 2, h: 1,
+		fill: { color: 'ED7D31' },
+	})
+	slide.addConnector({
+		type: 'straightConnector1',
+		start: { shape: 'BoxA', site: pptx.anchor.RIGHT },
+		end: { shape: 'BoxB', site: pptx.anchor.LEFT },
+		line: { width: 2, color: '000000' },
+	})
+
+	const xml = await readPart(await writeZip(pptx), 'ppt/slides/slide1.xml')
+	assert.ok(xml.includes('<p:cxnSp>'), 'missing p:cxnSp connector')
+	assert.ok(xml.includes('prst="straightConnector1"'), 'connector preset missing')
+	assert.ok(/<a:stCxn id="\d+" idx="3"\/>/.test(xml), 'stCxn objectName glue missing')
+	assert.ok(/<a:endCxn id="\d+" idx="1"\/>/.test(xml), 'endCxn objectName glue missing')
+	assert.ok(/<a:ext cx="[1-9]\d*"/.test(xml), 'connector auto-layout should produce non-zero width')
+
+	const unknown = new pptxgen()
+	const uSlide = unknown.addSlide()
+	uSlide.addShape(pptx.ShapeType.rect, { objectName: 'Only', x: 1, y: 1, w: 1, h: 1 })
+	uSlide.addConnector({ start: { shape: 'Missing' }, end: { shape: 'AlsoMissing' } })
+	const uXml = await readPart(await writeZip(unknown), 'ppt/slides/slide1.xml')
+	assert.ok(uXml.includes('<p:cxnSp>'), 'unknown objectName should still emit a connector')
+	assert.ok(!uXml.includes('<a:stCxn'), 'unknown start attachment must be dropped')
+	assert.ok(!uXml.includes('<a:endCxn'), 'unknown end attachment must be dropped')
+})

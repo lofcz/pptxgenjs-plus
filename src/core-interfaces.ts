@@ -94,6 +94,12 @@ export interface BackgroundProps extends DataOrPathProps, ShapeFillProps {
 	 * @deprecated v3.6.0 - use `DataOrPathProps` instead - remove in v4.0.0
 	 */
 	src?: string
+	/**
+	 * Recolor and correction effects applied to a background image (`a:blip` children)
+	 * - distinct from SVG `fill` path recolor
+	 * @example { grayscale: true, brightness: -20 }
+	 */
+	recolor?: ImageRecolorProps
 }
 /**
  * Color in Hex format
@@ -385,6 +391,123 @@ export interface BlurProps {
 }
 
 /**
+ * Fill-overlay effect (`a:fillOverlay`, ECMA-376 Part 1 §20.1.8.29 CT_FillOverlayEffect)
+ * - blends a second fill over the shape's own fill
+ * - both properties are required by the schema, so a partial value is not emitted
+ */
+export interface FillOverlayProps {
+	/** Blend mode */
+	blend: 'over' | 'mult' | 'screen' | 'darken' | 'lighten'
+	/** The fill blended over the shape */
+	fill: ShapeFillProps
+}
+
+/**
+ * Composed effect graph (`a:effectDag`, ECMA-376 Part 1 §20.1.8.25 CT_EffectContainer)
+ * - `a:effectLst` and `a:effectDag` are alternatives in the schema, so setting this emits the
+ *   shape's effects inside `a:effectDag` instead of `a:effectLst`
+ */
+export interface EffectDagProps {
+	/**
+	 * Whether the contained effects apply to siblings or to the whole tree
+	 * @default sib
+	 */
+	type?: 'sib' | 'tree'
+}
+
+/**
+ * Recolor and correction effects applied to an image's `a:blip`
+ * - PowerPoint Picture Format > Color / Corrections
+ * - named `recolor` so it does not collide with SVG path `fill` recolor
+ * - artistic effects are not implemented (MS-ODRAWXML + required pre-rendered `a14:imgLayer`)
+ */
+export interface ImageRecolorProps {
+	/**
+	 * Map the image onto two colours (`a:duotone`)
+	 * - the schema requires exactly two, so anything else is dropped
+	 * @example ['000000', 'FFFFFF']
+	 */
+	duotone?: [Color, Color]
+	/** Convert to greyscale (`a:grayscl`) */
+	grayscale?: boolean
+	/**
+	 * Brightness, percent -100 to 100 (`a:lum@bright`)
+	 * @default 0
+	 */
+	brightness?: number
+	/**
+	 * Contrast, percent -100 to 100 (`a:lum@contrast`)
+	 * @default 0
+	 */
+	contrast?: number
+	/**
+	 * Reduce to two tones at this threshold, percent 0 to 100 (`a:biLevel@thresh`)
+	 */
+	blackWhiteThreshold?: number
+	/**
+	 * Replace one colour with another (`a:clrChange`)
+	 * - both colours are required by the schema
+	 */
+	colorChange?: {
+		from: Color
+		to: Color
+		/**
+		 * Whether the alpha channel takes part in the comparison (`@useA`)
+		 * @default true
+		 */
+		useAlpha?: boolean
+	}
+}
+
+/**
+ * Alpha (transparency) effects applied to an image's `a:blip`
+ * - allowed on `a:blip` and inside `a:effectDag`, not in `a:effectLst`
+ */
+export interface ImageAlphaEffectProps {
+	/**
+	 * Replace every alpha value with this one (`a:alphaRepl`)
+	 * - percent, 0 (fully transparent) to 100 (fully opaque)
+	 */
+	replace?: number
+	/** Invert the alpha channel (`a:alphaInv`) */
+	invert?: boolean
+	/** Force alpha values below 100% to fully transparent (`a:alphaFloor`) */
+	floor?: boolean
+	/** Force alpha values above 0% to fully opaque (`a:alphaCeiling`) */
+	ceiling?: boolean
+}
+
+/**
+ * Theme style references for a shape (`p:style`, ECMA-376 Part 1 §20.1.4.1.25 CT_ShapeStyle)
+ * - named `styleRef` because `style` is already used by chart gridlines
+ * - each index points into the matching list in the theme's `a:fmtScheme`, 1-based
+ */
+export interface ShapeStyleProps {
+	/** Index into the theme's `a:lnStyleLst` (1-based) */
+	line?: number
+	/** Index into the theme's `a:fillStyleLst` (1-based) */
+	fill?: number
+	/** Index into the theme's `a:effectStyleLst` (1-based) */
+	effect?: number
+	/**
+	 * Which of the theme's font collections the shape's text follows
+	 * @default none
+	 */
+	font?: 'major' | 'minor' | 'none'
+	/**
+	 * Colour the referenced line, fill and effect resolve the theme's `phClr` against
+	 * @default 'accent1'
+	 */
+	color?: Color
+	/**
+	 * Colour the referenced font resolves against
+	 * - defaults to `lt1` because a font sharing the fill's colour renders as invisible text
+	 * @default 'lt1'
+	 */
+	fontColor?: Color
+}
+
+/**
  * WordArt / preset text warp (`a:prstTxWarp@prst`, ECMA-376 `ST_TextShapeType`)
  * @see standards/ecma/part-22_drawingml-reference-material-drawingml-main.txt §5.1.12.76
  */
@@ -438,7 +561,12 @@ export interface ShadowProps {
 	 * shadow type
 	 * @default 'none'
 	 */
-	type: 'outer' | 'inner' | 'none'
+	type: 'outer' | 'inner' | 'none' | 'preset'
+	/**
+	 * Preset shadow name, required when `type` is `preset` (`a:prstShdw@prst`)
+	 * - PowerPoint's twenty built-in shadow presets
+	 */
+	preset?: 'shdw1' | 'shdw2' | 'shdw3' | 'shdw4' | 'shdw5' | 'shdw6' | 'shdw7' | 'shdw8' | 'shdw9' | 'shdw10' | 'shdw11' | 'shdw12' | 'shdw13' | 'shdw14' | 'shdw15' | 'shdw16' | 'shdw17' | 'shdw18' | 'shdw19' | 'shdw20'
 	/**
 	 * opacity (percent)
 	 * - range: 0.0-1.0
@@ -511,6 +639,46 @@ export interface ShapePatternProps {
 	bgColor?: Color
 }
 
+/**
+ * Picture fill (`a:blipFill`) for shapes and table cells
+ * - stretch (ECMA-376 20.1.8.56) or tile (20.1.8.58)
+ */
+export interface ShapeImageFillProps {
+	/**
+	 * Image data (base64), with a mime header
+	 * - one of `data` or `path` is required
+	 * @example 'image/png;base64,iVBORw0KGgo...'
+	 */
+	data?: string
+	/**
+	 * Image path or URL
+	 * - one of `data` or `path` is required
+	 */
+	path?: string
+	/**
+	 * How the image fills the shape
+	 * @default 'stretch'
+	 */
+	sizing?: 'stretch' | 'tile'
+	/**
+	 * `tile` only: scale applied to each tile (percent)
+	 * @default 100
+	 */
+	scale?: number
+	/**
+	 * `tile` only: where tiling starts
+	 * @default 'tl'
+	 */
+	alignment?: 'tl' | 't' | 'tr' | 'l' | 'ctr' | 'r' | 'bl' | 'b' | 'br'
+	/**
+	 * Whether the fill rotates with the shape
+	 * @default true
+	 */
+	rotateWithShape?: boolean
+	/** relationship id resolved when the object is created @internal */
+	_rId?: number
+}
+
 // used by: shape, table, text
 export interface ShapeFillProps {
 	/**
@@ -534,8 +702,10 @@ export interface ShapeFillProps {
 	 * - `'gradient'` — nested definition via `gradient` (linear + radial)
 	 * - `'linearGradient'` — flat sambauers/gradients API (`stops`/`angle`/… on this object)
 	 * - `'pattern'` — pattern fill via `pattern`
+	 * - `'image'` — picture fill via `image` (`a:blipFill`)
+	 * - `'group'` — inherit the parent group's fill (`a:grpFill`)
 	 */
-	type?: 'none' | 'solid' | 'gradient' | 'linearGradient' | 'pattern'
+	type?: 'none' | 'solid' | 'gradient' | 'linearGradient' | 'pattern' | 'image' | 'group'
 	/**
 	 * Gradient fill definition
 	 * - required when `type` is `'gradient'` (ignored otherwise)
@@ -548,6 +718,14 @@ export interface ShapeFillProps {
 	 * @example { type:'pattern', pattern:{ prst:'ltHorz', color:'000000', bgColor:'FFFFFF' } }
 	 */
 	pattern?: ShapePatternProps
+	/**
+	 * Picture fill definition
+	 * - required when `type` is `'image'`
+	 * @example { type:'image', image:{ data:'image/png;base64,iV[...]', sizing:'tile' } }
+	 */
+	image?: ShapeImageFillProps
+	/** relationship id for a picture fill without a nested `image` object @internal */
+	_rId?: number
 
 	/**
 	 * Flat linear-gradient stops (`type: 'linearGradient'`, sambauers/gradients)
@@ -716,6 +894,10 @@ export interface ShapeLineProps extends ShapeFillProps {
 	 * @example [50000] // mid bend for bentConnector3
 	 */
 	curveadjust?: number[]
+	/** `objectName` of the start shape (resolved to `sourceId` at emit) @internal */
+	_sourceName?: string
+	/** `objectName` of the end shape (resolved to `targetId` at emit) @internal */
+	_targetName?: string
 	// FUTURE: beginArrowSize (1-9)
 	// FUTURE: endArrowSize (1-9)
 
@@ -1164,6 +1346,31 @@ export interface ImageProps extends PositionProps, DataOrPathProps, ObjectNamePr
 	 */
 	blur?: BlurProps
 	/**
+	 * Fill blended over the image's own fill (`a:fillOverlay`)
+	 * @example { blend: 'mult', fill: { color: 'FF0000', transparency: 50 } }
+	 */
+	fillOverlay?: FillOverlayProps
+	/**
+	 * Emit the effects as a composed effect graph (`a:effectDag`) rather than an `a:effectLst`
+	 */
+	effectDag?: EffectDagProps
+	/**
+	 * Alpha (transparency) effects applied to the image itself (`a:blip`)
+	 * @example { invert: true }
+	 */
+	alphaEffects?: ImageAlphaEffectProps
+	/**
+	 * Recolor and correction effects applied to the image itself (`a:blip`)
+	 * - distinct from SVG path `fill` recolor
+	 * @example { grayscale: true, brightness: 20, contrast: -10 }
+	 */
+	recolor?: ImageRecolorProps
+	/**
+	 * Theme style references (`p:style`)
+	 * @example { fill: 1, line: 2, effect: 0, font: 'minor' }
+	 */
+	styleRef?: ShapeStyleProps
+	/**
 	 * Image sizing options
 	 */
 	sizing?: {
@@ -1338,6 +1545,11 @@ export interface GroupProps extends PositionProps, ObjectNameProps {
 	 * Group shadow (`a:effectLst` on `p:grpSpPr`)
 	 */
 	shadow?: ShadowProps
+	/**
+	 * Group fill (`EG_FillProperties` on `p:grpSpPr`)
+	 * - child shapes can inherit this with `fill: { type: 'group' }`
+	 */
+	fill?: ShapeFillProps
 	/** @internal child objects collected by `addGroup` */
 	_objects?: ISlideObject[]
 }
@@ -1351,6 +1563,51 @@ export interface Group {
 	addText(text: string | TextProps[], options?: TextPropsOptions): Group
 	addImage(options: ImageProps): Group
 	addGroup(options: GroupProps, build?: (group: Group) => void): Group
+	addConnector(options?: ConnectorProps): Group
+}
+
+/**
+ * Where a connector attaches to a shape (`a:stCxn`/`a:endCxn`)
+ * - maps onto existing `line.sourceId`/`targetId` via `objectName` at emit time
+ */
+export interface ConnectionProps {
+	/** `objectName` of the shape to glue to */
+	shape: string
+	/**
+	 * Which connection site on that shape
+	 * - a rectangle has 0 (top), 1 (left), 2 (bottom), 3 (right)
+	 * @default 0
+	 */
+	site?: number
+}
+
+/**
+ * Additive connector convenience (`slide.addConnector`)
+ * - maps onto `addShape` + `line.isConnector` / sourceId / targetId
+ */
+export interface ConnectorProps extends PositionProps, ObjectNameProps {
+	/**
+	 * Connector geometry
+	 * @default straightConnector1
+	 */
+	type?: 'line' | 'straightConnector1' | 'bentConnector2' | 'bentConnector3' | 'bentConnector4' | 'bentConnector5' | 'curvedConnector2' | 'curvedConnector3' | 'curvedConnector4' | 'curvedConnector5'
+	/** line formatting, including arrow heads */
+	line?: ShapeLineProps
+	/**
+	 * Rotation in degrees
+	 * @default 0
+	 */
+	rotate?: number
+	flipH?: boolean
+	flipV?: boolean
+	/** glue the start of the connector to a shape (`objectName`) */
+	start?: ConnectionProps
+	/** glue the end of the connector to a shape (`objectName`) */
+	end?: ConnectionProps
+	/** theme style references (`p:style`) */
+	styleRef?: ShapeStyleProps
+	shadow?: ShadowProps
+	fill?: ShapeFillProps
 }
 
 // shapes =========================================================================================
@@ -1466,6 +1723,20 @@ export interface ShapeProps extends PositionProps, ObjectNameProps, AppearOnClic
 	 * Blur effect (`a:blur` in shape `effectLst`)
 	 */
 	blur?: BlurProps
+	/**
+	 * Fill blended over the shape's own fill (`a:fillOverlay`)
+	 * @example { blend: 'mult', fill: { color: 'FF0000', transparency: 50 } }
+	 */
+	fillOverlay?: FillOverlayProps
+	/**
+	 * Emit the effects as a composed effect graph (`a:effectDag`) rather than an `a:effectLst`
+	 */
+	effectDag?: EffectDagProps
+	/**
+	 * Theme style references (`p:style`)
+	 * @example { fill: 1, line: 2, effect: 0, font: 'minor' }
+	 */
+	styleRef?: ShapeStyleProps
 
 	/**
 	 * @deprecated v3.3.0
@@ -1964,6 +2235,18 @@ export interface TextPropsOptions extends PositionProps, DataOrPathProps, TextBa
 	 * Blur effect (`a:blur` on the text shape)
 	 */
 	blur?: BlurProps
+	/**
+	 * Fill blended over the text shape's own fill (`a:fillOverlay`)
+	 */
+	fillOverlay?: FillOverlayProps
+	/**
+	 * Emit the effects as a composed effect graph (`a:effectDag`) rather than an `a:effectLst`
+	 */
+	effectDag?: EffectDagProps
+	/**
+	 * Theme style references (`p:style`)
+	 */
+	styleRef?: ShapeStyleProps
 	shape?: SHAPE_NAME
 	/**
 	 * Strikethrough style
@@ -2950,6 +3233,11 @@ export interface PresSlide extends SlideBaseProps {
 	 * Holds shapes, text, images, and nested groups — not tables, charts, or media.
 	 */
 	addGroup: (options: GroupProps, build?: (group: Group) => void) => PresSlide
+	/**
+	 * Connector shape (`p:cxnSp`). Additive convenience over `line.isConnector`.
+	 * Glue with `start`/`end` `objectName`s, or pass numeric `line.sourceId`/`targetId`.
+	 */
+	addConnector: (options?: ConnectorProps) => PresSlide
 	/**
 	 * WordArt: text with a warp (`presetShape` / `a:prstTxWarp`) and/or a gradient run fill.
 	 * Defaults to centered `textNoShape` (no transform) unless `options` override them.

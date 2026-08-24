@@ -85,7 +85,7 @@ export function genXmlErrBars (errorrate: number[], sheetCol: number, lastRow: n
  * `createShadowElement` has passed through the defaults-merge boundary.
  */
 const shadowBrand: unique symbol = Symbol('resolvedShadow')
-type ResolvedShadowProps = Required<ShadowProps> & { readonly [shadowBrand]: boolean }
+type ResolvedShadowProps = Omit<Required<ShadowProps>, 'preset'> & { preset?: ShadowProps['preset'], readonly [shadowBrand]: boolean }
 
 /**
  * Resolve boundary: merge user shadow options over the documented defaults and brand the result.
