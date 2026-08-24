@@ -14,15 +14,18 @@ import {
 	SlideObjectAnimation,
 	SlideShowEvent,
 	SlideShowProps,
+	TableStyleBorderProps,
+	TableStylePartProps,
+	TableStyleProps,
 	TextProps,
 } from '../core-interfaces'
 import { createTimingXml, MediaPlaybackEntry } from '../gen-animations'
 import { genXmlTransition } from '../gen-transition'
 import { AUTHOR_PART_CONTENT_TYPE, AUTHOR_REL_TYPE, COMMENT_PART_CONTENT_TYPE, COMMENT_REL_URI, P188_NS } from '../gen-comments'
-import { createColorElement, encodeXmlEntities, getUuid, resolveThemeColors } from '../gen-utils'
+import { createColorElement, encodeXmlEntities, genXmlColorSelection, getUuid, resolveThemeColors } from '../gen-utils'
 import { extPartPackagePath } from './content-parts'
 import { slideCommentsRelId } from './relationships'
-import { resolveZoomSections, slideObjectToXml } from './slide'
+import { genXmlLine, resolveZoomSections, slideObjectToXml } from './slide'
 import { A14_NS, genXmlDesignTagLst, MATH_NS, MC_NS, P14_NS, P1710_NS, URI_DESIGN_TAG_LST } from './text'
 import {
 	CHANGES_INFO_CONTENT_TYPE,
@@ -114,7 +117,7 @@ export function makeXmlContTypes (slides: PresSlide[], slideLayouts: SlideLayout
 	strXml += '<Default Extension="mp4" ContentType="video/mp4"/>' // NOTE: Hard-Code this extension as it wont be created in loop below (as extn !== type)
 	slides.forEach(slide => {
 		(slide._relsMedia || []).forEach(rel => {
-			if (rel.type !== 'image' && rel.type !== 'online' && rel.type !== 'chart' && rel.extn !== 'm4v' && !strXml.includes(rel.type)) {
+			if (!rel.isLinked && rel.type !== 'image' && rel.type !== 'online' && rel.type !== 'chart' && rel.extn !== 'm4v' && !strXml.includes(rel.type)) {
 				strXml += '<Default Extension="' + rel.extn + '" ContentType="' + rel.type + '"/>'
 			}
 		})
@@ -190,7 +193,7 @@ export function makeXmlContTypes (slides: PresSlide[], slideLayouts: SlideLayout
 		strXml += ' <Override PartName="' + rel.Target + '" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
 	})
 	; (masterSlide?._relsMedia ?? []).forEach(rel => {
-		if (rel.type !== 'image' && rel.type !== 'online' && rel.type !== 'chart' && rel.extn !== 'm4v' && !strXml.includes(rel.type)) { strXml += ' <Default Extension="' + rel.extn + '" ContentType="' + rel.type + '"/>' }
+		if (!rel.isLinked && rel.type !== 'image' && rel.type !== 'online' && rel.type !== 'chart' && rel.extn !== 'm4v' && !strXml.includes(rel.type)) { strXml += ' <Default Extension="' + rel.extn + '" ContentType="' + rel.type + '"/>' }
 	})
 
 	// LAST: Finish XML (Resume core)
@@ -332,7 +335,7 @@ export function makeXmlPresentationRels (slides: PresSlide[], tracking?: Present
 function collectMediaPlayback (slide: PresSlide): MediaPlaybackEntry[] {
 	const entries: MediaPlaybackEntry[] = []
 	;(slide._slideObjects ?? []).forEach(obj => {
-		if (obj._type !== SLIDE_OBJECT_TYPES.media || obj.mtype === 'online') return
+		if (obj._type !== SLIDE_OBJECT_TYPES.media || (obj.mtype !== 'audio' && obj.mtype !== 'video')) return
 		const o = obj.options
 		// Defaults are all false: no timing node unless at least one playback flag is set.
 		if (!o || !(o.autoplay || o.loop || o.fullScreen || o.mute)) return
@@ -760,8 +763,93 @@ function makeXmlPresPropsExtLst (pres?: IPresentationProps): string {
  * @see: http://openxmldeveloper.org/discussions/formats/f/13/p/2398/8107.aspx
  * @return {string} XML
  */
-export function makeXmlTableStyles (): string {
-	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${CRLF}<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>`
+/**
+ * The GUID `a:tblStyleLst@def` has always carried - PowerPoint's "Medium Style 2 - Accent 1"
+ */
+const DEF_TABLE_STYLE_ID = '{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}'
+
+/**
+ * CT_TableStyle fixes this child order, and it is neither alphabetical nor the intuitive one:
+ * `lastCol` precedes `firstCol`, and `firstRow` sits between `swCell` and `neCell`.
+ */
+const TABLE_STYLE_PARTS: Array<[keyof TableStyleProps, string]> = [
+	['wholeTable', 'wholeTbl'],
+	['band1H', 'band1H'],
+	['band2H', 'band2H'],
+	['band1V', 'band1V'],
+	['band2V', 'band2V'],
+	['lastCol', 'lastCol'],
+	['firstCol', 'firstCol'],
+	['lastRow', 'lastRow'],
+	['seCell', 'seCell'],
+	['swCell', 'swCell'],
+	['firstRow', 'firstRow'],
+	['neCell', 'neCell'],
+	['nwCell', 'nwCell'],
+]
+
+/** CT_TableCellBorderStyle child order */
+const TABLE_STYLE_BORDERS: Array<keyof TableStyleBorderProps> = ['left', 'right', 'top', 'bottom', 'insideH', 'insideV']
+
+/**
+ * One part of a table style (`a:wholeTbl`, `a:band1H`, ...).
+ * - `a:tcTxStyle` precedes `a:tcStyle`; inside the cell style, `a:tcBdr` precedes the fill
+ */
+function genXmlTableStylePart (tag: string, part: TableStylePartProps): string {
+	// `b`/`i` are ST_OnOffStyleType: an unset property means "def", i.e. leave it to the theme
+	const bold = typeof part.bold === 'boolean' ? ` b="${part.bold ? 'on' : 'off'}"` : ''
+	const italic = typeof part.italic === 'boolean' ? ` i="${part.italic ? 'on' : 'off'}"` : ''
+	const txStyle = bold || italic || part.color
+		? `<a:tcTxStyle${bold}${italic}>${part.color ? createColorElement(part.color) : ''}</a:tcTxStyle>`
+		: ''
+
+	const borders = TABLE_STYLE_BORDERS
+		.filter(edge => part.borders?.[edge])
+		.map(edge => {
+			const line = part.borders?.[edge]
+			return line ? `<a:${edge}>${genXmlLine(line)}</a:${edge}>` : ''
+		})
+		.join('')
+	const fill = part.fill ? `<a:fill>${genXmlColorSelection(part.fill)}</a:fill>` : ''
+	const cellStyle = borders || fill ? `<a:tcStyle>${borders ? `<a:tcBdr>${borders}</a:tcBdr>` : ''}${fill}</a:tcStyle>` : ''
+
+	return txStyle || cellStyle ? `<a:${tag}>${txStyle}${cellStyle}</a:${tag}>` : ''
+}
+
+/**
+ * Creates `ppt/tableStyles.xml`
+ * - with no custom styles this is the same self-closing stub earlier versions wrote
+ * @param {TableStyleProps[]} [styles] - custom table style definitions
+ * @return {string} XML
+ */
+export function makeXmlTableStyles (styles?: TableStyleProps[]): string {
+	const valid = (styles ?? []).filter(style => {
+		// `@styleId` is an ST_Guid and `@styleName` is required; a malformed id would be rejected on open
+		if (!/^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$/.test(style?.id ?? '')) {
+			console.warn(`[pptxgenjs] table style \`id\` must be a braced GUID, e.g. '{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}' - "${String(style?.id)}" ignored`)
+			return false
+		}
+		if (!style.name) {
+			console.warn(`[pptxgenjs] table style ${style.id} has no \`name\` - ignored`)
+			return false
+		}
+		return true
+	})
+
+	const head = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${CRLF}<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="${DEF_TABLE_STYLE_ID}"`
+	if (valid.length === 0) return `${head}/>`
+
+	const body = valid.map(style => {
+		const parts = TABLE_STYLE_PARTS
+			.map(([prop, tag]) => {
+				const part = style[prop]
+				return part && typeof part === 'object' ? genXmlTableStylePart(tag, part) : ''
+			})
+			.join('')
+		return `<a:tblStyle styleId="${style.id}" styleName="${encodeXmlEntities(style.name)}">${parts}</a:tblStyle>`
+	}).join('')
+
+	return `${head}>${body}</a:tblStyleLst>`
 }
 
 /**

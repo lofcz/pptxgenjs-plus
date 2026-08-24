@@ -51,17 +51,19 @@ function slideObjectRelationsToXml (slide: PresSlide | SlideLayout, defaultRels:
 			strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="' + rel.Target + '"/>'
 		} else if (rel.type.toLowerCase().includes('audio')) {
 			// As media has *TWO* rel entries per item, check for first one, if found add second rel with alt style
+			const externalAttr = rel.isLinked ? ' TargetMode="External"' : ''
 			if (strXml.includes(' Target="' + rel.Target + '"')) {
-				strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.microsoft.com/office/2007/relationships/media" Target="' + rel.Target + '"/>'
+				strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.microsoft.com/office/2007/relationships/media" Target="' + rel.Target + '"' + externalAttr + '/>'
 			} else {
-				strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/audio" Target="' + rel.Target + '"/>'
+				strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/audio" Target="' + rel.Target + '"' + externalAttr + '/>'
 			}
 		} else if (rel.type.toLowerCase().includes('video')) {
 			// As media has *TWO* rel entries per item, check for first one, if found add second rel with alt style
+			const externalAttr = rel.isLinked ? ' TargetMode="External"' : ''
 			if (strXml.includes(' Target="' + rel.Target + '"')) {
-				strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.microsoft.com/office/2007/relationships/media" Target="' + rel.Target + '"/>'
+				strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.microsoft.com/office/2007/relationships/media" Target="' + rel.Target + '"' + externalAttr + '/>'
 			} else {
-				strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/video" Target="' + rel.Target + '"/>'
+				strXml += '<Relationship Id="rId' + relRid + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/video" Target="' + rel.Target + '"' + externalAttr + '/>'
 			}
 		} else if (rel.type.toLowerCase().includes('online')) {
 			// As media has *TWO* rel entries per item, check for first one, if found add second rel with alt style

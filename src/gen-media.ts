@@ -122,7 +122,7 @@ export function applyNaturalImageSizes(layout: PresSlide | SlideLayout): void {
 /** Select relations that still need their local or remote media encoded. */
 function getMediaCandidates(layout: PresSlide | SlideLayout): ISlideRelMedia[] {
 	return layout._relsMedia.filter(
-		rel => rel.type !== 'online' && !rel.data && (!rel.path || (rel.path && !rel.path.includes('preencoded')))
+		rel => !rel.isLinked && rel.type !== 'online' && !rel.data && (!rel.path || (rel.path && !rel.path.includes('preencoded')))
 	)
 }
 

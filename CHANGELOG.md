@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Table cells emit DrawingML `a:lnTlToBr` / `a:lnBlToTr` (`borderDiagonalDown` / `borderDiagonalUp`), `a:cell3D` (bevel, material, light rig), and `a:tcPr` `horzOverflow` / `anchorCtr`
+- `pptx.tableStyles` writes custom `a:tblStyle` definitions into `ppt/tableStyles.xml`; `tableStyleId` still accepts built-in PowerPoint GUIDs
+- `addMedia` sources: linked audio/video (`link` without `data`/`path`), `type: 'audioCd'`, `type: 'wav'` (`a:wavAudioFile`), plus `contentType`, `isPhoto`, and `userDrawn`
 - Text `vertOverflow` / `horzOverflow` emit ECMA-376 `a:bodyPr` overflow attrs so overflowing runs can clip instead of spilling out of the shape
 - Package-contract tests for opt-in `addFont` (Font parts, `application/x-fontdata`, Presentation font rels); default export embeds nothing
 - `pptx.slideShow` emits a spec-valid `p:showPr` with the required present/browse/kiosk choice, plus loop/narration/animation/timing flags

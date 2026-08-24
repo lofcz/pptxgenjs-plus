@@ -3507,3 +3507,179 @@ test('OMML: malformed omml option throws instead of writing a corrupt package', 
 	const xml = await readPart(await writeZip(pptx3), 'ppt/slides/slide1.xml')
 	assert.ok(xml.includes('a&lt;b&amp;c'), 'valid OMML was rejected or mangled')
 })
+
+test('table cells emit diagonal borders, 3-D cells, overflow and keep rtlMode', async () => {
+	const pptx = new pptxgen()
+	pptx.addSlide().addTable(
+		[[
+			{ text: 'diag', options: { borderDiagonalDown: { color: 'FF0000', width: 2 }, borderDiagonalUp: { type: 'dash' }, cell3D: { material: 'clear' }, fill: { color: 'EEEEEE' } } },
+			{ text: '3d', options: { cell3D: { bevel: { preset: 'circle', width: 0.05, height: 0.05 }, material: 'metal', lightRig: { rig: 'threePt', dir: 't' } } } },
+			{ text: 'ovf', options: { horzOverflow: 'overflow', anchorCtr: true, textDirection: 'vert270' } },
+			{ text: 'mat', options: { cell3D: { material: 'matte' } } },
+		]],
+		{ x: 0.5, y: 0.5, w: 9, rtlMode: true }
+	)
+	const xml = await readPart(await writeZip(pptx), 'ppt/slides/slide1.xml')
+	const cells = xml.match(/<a:tcPr[\s\S]*?<\/a:tcPr>/g) ?? []
+	assert.equal(cells.length, 4, `expected four cells, got ${cells.length}`)
+
+	assert.ok(xml.includes('<a:tblPr rtl="1"'), 'a:tblPr@rtl missing - CT_TableProperties owns rtl, not a:tbl')
+	assert.ok(cells[0].includes('<a:lnTlToBr w="25400" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>'), `lnTlToBr wrong: ${cells[0]}`)
+	assert.ok(cells[0].includes('<a:lnBlToTr') && cells[0].includes('<a:prstDash val="sysDash"/>'), 'lnBlToTr missing or not dashed')
+	// CT_TableCellProperties fixes the child sequence, so the first cell carries every one of them
+	const seq = ['<a:lnL', '<a:lnR', '<a:lnT', '<a:lnB', '<a:lnTlToBr', '<a:lnBlToTr', '<a:cell3D', '<a:solidFill><a:srgbClr val="EEEEEE"/>'].map(tag => cells[0].indexOf(tag))
+	assert.ok(seq.every(idx => idx > -1), `a tcPr child is missing: ${seq.join(',')}`)
+	assert.deepEqual(seq, [...seq].sort((a, b) => a - b), `CT_TableCellProperties child order violated: ${seq.join(',')}`)
+
+	assert.ok(cells[1].includes('<a:cell3D prstMaterial="metal"><a:bevel w="45720" h="45720" prst="circle"/><a:lightRig rig="threePt" dir="t"/></a:cell3D>'), `cell3D wrong: ${cells[1]}`)
+	assert.ok(cells[1].indexOf('<a:cell3D') > cells[1].indexOf('<a:lnB'), 'cell3D must follow the border elements')
+	// `a:bevel` is required by CT_Cell3D, so it is written even when only the material is given
+	assert.ok(cells[3].includes('<a:cell3D prstMaterial="matte"><a:bevel/></a:cell3D>'), `material-only cell3D wrong: ${cells[3]}`)
+
+	assert.ok(cells[2].includes('vert="vert270"') && cells[2].includes('anchorCtr="1"') && cells[2].includes('horzOverflow="overflow"'), `cell attrs wrong: ${cells[2]}`)
+
+	// `rig` and `dir` are both required on CT_LightRig, so a partial rig is dropped
+	const partial = new pptxgen()
+	partial.addSlide().addTable([[{ text: 'y', options: { cell3D: { lightRig: { rig: 'threePt' } as never } } }]], { x: 1, y: 1, w: 4 })
+	const partialXml = await readPart(await writeZip(partial), 'ppt/slides/slide1.xml')
+	assert.ok(partialXml.includes('<a:cell3D><a:bevel/></a:cell3D>'), 'incomplete lightRig was emitted')
+
+	// a table that asks for none of it is unchanged: no new element, no new attribute
+	const bare = new pptxgen()
+	bare.addSlide().addTable([['a', 'b']], { x: 1, y: 1, w: 4 })
+	const bareXml = await readPart(await writeZip(bare), 'ppt/slides/slide1.xml')
+	for (const tag of ['<a:lnTlToBr', '<a:lnBlToTr', '<a:cell3D', 'horzOverflow=', 'anchorCtr=', 'rtl=']) {
+		assert.ok(!bareXml.includes(tag), `default table gained ${tag}`)
+	}
+})
+
+test('custom table style definitions reach ppt/tableStyles.xml', async () => {
+	const STYLE_ID = '{A1B2C3D4-1111-2222-3333-444455556666}'
+	const pptx = new pptxgen()
+	pptx.tableStyles = [
+		{
+			id: STYLE_ID,
+			name: 'NEOMA Blue',
+			// one style carrying every part, so the CT_TableStyle child order is actually exercised
+			wholeTable: { color: 'tx1', borders: { top: { color: '4472C4', width: 1 }, insideH: { color: 'D9D9D9', width: 0.5 } } },
+			band1H: { fill: { color: 'DEEAF6' } },
+			band2H: { fill: { color: 'FFFFFF' } },
+			band1V: { fill: { color: 'EEEEEE' } },
+			band2V: { fill: { color: 'DDDDDD' } },
+			lastCol: { bold: true },
+			firstCol: { bold: true },
+			lastRow: { bold: true, italic: false },
+			seCell: { fill: { color: '111111' } },
+			swCell: { fill: { color: '222222' } },
+			firstRow: { bold: true, color: 'FFFFFF', fill: { color: '4472C4' } },
+			neCell: { fill: { color: '333333' } },
+			nwCell: { fill: { color: '444444' } },
+		},
+		{ id: 'not-a-guid', name: 'Bad' },
+		{ id: '{A1B2C3D4-1111-2222-3333-444455556667}', name: '' },
+	]
+	pptx.addSlide().addTable([['H1', 'H2'], ['a', 'b']], { x: 1, y: 1, w: 6, tableStyleId: STYLE_ID, firstRow: true, bandRow: true })
+
+	const xml = await readPart(await writeZip(pptx), 'ppt/tableStyles.xml')
+	assert.ok(xml.includes(`<a:tblStyle styleId="${STYLE_ID}" styleName="NEOMA Blue">`), `tblStyle wrong: ${xml.slice(0, 300)}`)
+	// both attributes are required by CT_TableStyle, so a bad id or a missing name is dropped
+	assert.equal((xml.match(/<a:tblStyle /g) ?? []).length, 1, 'an invalid table style was emitted')
+	assert.ok(!xml.includes('not-a-guid'), 'a malformed style id reached the output')
+
+	// CT_TableStyle fixes this order, and it is neither alphabetical nor intuitive: lastCol before
+	// firstCol, and firstRow between swCell and neCell
+	const expected = ['wholeTbl', 'band1H', 'band2H', 'band1V', 'band2V', 'lastCol', 'firstCol', 'lastRow', 'seCell', 'swCell', 'firstRow', 'neCell', 'nwCell']
+	const emitted = (xml.match(/<a:(wholeTbl|band1H|band2H|band1V|band2V|lastCol|firstCol|lastRow|seCell|swCell|firstRow|neCell|nwCell)>/g) ?? []).map(tag => tag.slice(3, -1))
+	assert.deepEqual(emitted, expected, 'CT_TableStyle child order violated')
+
+	// `a:tcTxStyle` precedes `a:tcStyle`, and inside the cell style `a:tcBdr` precedes the fill
+	const firstRow = /<a:firstRow>[\s\S]*?<\/a:firstRow>/.exec(xml)?.[0] ?? ''
+	assert.ok(firstRow.includes('<a:tcTxStyle b="on"><a:srgbClr val="FFFFFF"/></a:tcTxStyle>'), `firstRow text style wrong: ${firstRow}`)
+	assert.ok(firstRow.indexOf('<a:tcTxStyle') < firstRow.indexOf('<a:tcStyle'), 'tcTxStyle must precede tcStyle')
+	assert.ok(firstRow.includes('<a:tcStyle><a:fill><a:solidFill><a:srgbClr val="4472C4"/></a:solidFill></a:fill></a:tcStyle>'), `firstRow fill wrong: ${firstRow}`)
+
+	const whole = /<a:wholeTbl>[\s\S]*?<\/a:wholeTbl>/.exec(xml)?.[0] ?? ''
+	assert.ok(whole.indexOf('<a:tcBdr>') < whole.indexOf('</a:tcStyle>'), 'tcBdr must sit inside tcStyle')
+	assert.ok(whole.includes('<a:top><a:ln w="12700"><a:solidFill><a:srgbClr val="4472C4"/></a:solidFill></a:ln></a:top>'), `border wrong: ${whole}`)
+	assert.ok(whole.includes('<a:insideH><a:ln w="6350">'), 'insideH border missing')
+
+	// `b`/`i` are ST_OnOffStyleType: an unset property is left to the theme, `false` is written as "off"
+	const lastRow = /<a:lastRow>[\s\S]*?<\/a:lastRow>/.exec(xml)?.[0] ?? ''
+	assert.ok(lastRow.includes('b="on"') && lastRow.includes('i="off"'), `lastRow on/off wrong: ${lastRow}`)
+	assert.ok(!(/<a:band1H>[\s\S]*?<\/a:band1H>/.exec(xml)?.[0] ?? '').includes('b='), 'an unset bold was written')
+
+	// `@def` is what a table with no `tableStyleId` inherits, so a custom style must not repoint it
+	assert.ok(xml.includes('def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"'), '@def was repointed at a custom style')
+
+	// with no custom styles the part is the same self-closing stub as before
+	const bare = new pptxgen()
+	bare.addSlide().addTable([['a']], { x: 1, y: 1, w: 2 })
+	const bareXml = await readPart(await writeZip(bare), 'ppt/tableStyles.xml')
+	assert.ok(bareXml.trimEnd().endsWith('def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>'), `default tableStyles.xml changed: ${bareXml}`)
+	assert.ok(!bareXml.includes('<a:tblStyle '), 'a default deck gained a table style')
+})
+
+test('media source elements - linked media, audioCd, wavAudioFile', async () => {
+	const MP4 = 'video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE='
+	const WAV = 'audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addMedia({ type: 'video', data: MP4, x: 0.5, y: 0.5, w: 2, h: 1.5, isPhoto: true, userDrawn: true })
+	slide.addMedia({ type: 'video', link: 'C:/movies/clip.mp4', x: 3, y: 0.5, w: 2, h: 1.5, contentType: 'video/mp4' })
+	slide.addMedia({ type: 'audio', link: '/srv/audio/theme.mp3', x: 5.5, y: 0.5, w: 2, h: 1.5 })
+	slide.addMedia({ type: 'audioCd', audioCd: { start: { track: 1 }, end: { track: 1, time: 30 } }, x: 0.5, y: 2.5, w: 2, h: 1.5 })
+	slide.addMedia({ type: 'wav', data: WAV, x: 3, y: 2.5, w: 2, h: 1.5 })
+
+	const zip = await writeZip(pptx)
+	const xml = await readPart(zip, 'ppt/slides/slide1.xml')
+	const rels = await readPart(zip, 'ppt/slides/_rels/slide1.xml.rels')
+
+	// EG_Media is a choice: every media frame carries exactly one media element
+	const frames = (xml.match(/<p:nvPr[^>]*>[\s\S]*?<\/p:nvPr>/g) ?? []).filter(frame => /a:videoFile|a:audioFile|a:audioCd|a:wavAudioFile/.test(frame))
+	assert.equal(frames.length, 5, `expected five media frames, got ${frames.length}`)
+	for (const frame of frames) {
+		const kinds = (frame.match(/<a:(videoFile|audioFile|audioCd|wavAudioFile)\b/g) ?? []).length
+		assert.equal(kinds, 1, `EG_Media is a choice, but a frame carried ${kinds} media elements: ${frame}`)
+	}
+
+	// `p:nvPr` attributes default to false, so only the "on" case is written
+	assert.ok(xml.includes('<p:nvPr isPhoto="1" userDrawn="1">'), 'isPhoto/userDrawn missing')
+	assert.equal((xml.match(/<p:nvPr isPhoto=/g) ?? []).length, 1, 'isPhoto leaked onto other frames')
+
+	// linked media: same three-relationship shape, but external and with no part in the package
+	assert.ok(/<a:videoFile r:link="rId\d+" contentType="video\/mp4"\/>/.test(xml), `linked video wrong: ${frames[1]}`)
+	assert.ok(/<a:audioFile r:link="rId\d+"\/>/.test(xml), `linked audio wrong: ${frames[2]}`)
+	const relElements = rels.match(/<Relationship\b[^>]*\/>/g) ?? []
+	for (const target of ['C:/movies/clip.mp4', '/srv/audio/theme.mp3']) {
+		const matches = relElements.filter(rel => rel.includes(`Target="${target}"`))
+		assert.equal(matches.length, 2, `expected a video/audio and a media relationship for ${target}, got ${matches.length}`)
+		for (const rel of matches) assert.ok(rel.includes('TargetMode="External"'), `linked media relationship is not external: ${rel}`)
+	}
+	// nothing was written for the linked files, and no content type was declared for one
+	assert.ok(!Object.keys(zip.files).some(name => name.includes('clip.mp4') || name.includes('theme.mp3')), 'a part was written for linked media')
+	assert.ok(!(await readPart(zip, '[Content_Types].xml')).includes('Extension="mp3"'), 'a Default Extension was declared for a part that is never written')
+
+	// CT_AudioCD: `a:st`/`a:end` are required, `@track` is required, `@time` defaults to 0
+	assert.ok(xml.includes('<a:audioCd><a:st track="1"/><a:end track="1" time="30"/></a:audioCd>'), `audioCd wrong: ${frames[3]}`)
+	// CD audio references the drive, so it has no media relationship and no `p14:media`
+	assert.ok(!frames[3].includes('p14:media'), 'audioCd emitted a p14:media extension')
+
+	// `a:wavAudioFile` embeds via `r:embed` against an audio relationship, and has no `p14:media`
+	assert.ok(/<a:wavAudioFile r:embed="rId\d+" name="[^"]*"\/>/.test(frames[4]), `wavAudioFile wrong: ${frames[4]}`)
+	assert.ok(!frames[4].includes('p14:media'), 'wavAudioFile emitted a p14:media extension')
+	assert.ok(Object.keys(zip.files).some(name => name.endsWith('.wav')), 'the embedded WAV part is missing')
+	assert.ok((await readPart(zip, '[Content_Types].xml')).includes('Extension="wav" ContentType="audio/wav"'), 'the WAV content type is missing')
+
+	// audioCd requires both track numbers - addMedia throws rather than guessing
+	assert.throws(() => pptx.addSlide().addMedia({ type: 'audioCd', x: 1, y: 1, w: 1, h: 1 }), /audioCd\.start\.track/, 'audioCd without tracks did not throw')
+
+	// embedded media is unchanged: three relationships, an internal target, and a p14:media
+	const bare = new pptxgen()
+	bare.addSlide().addMedia({ type: 'video', data: MP4, x: 1, y: 1, w: 2, h: 1.5 })
+	const bareZip = await writeZip(bare)
+	const bareXml = await readPart(bareZip, 'ppt/slides/slide1.xml')
+	assert.ok(bareXml.includes('<p:nvPr>'), 'a default media frame gained an attribute')
+	assert.ok(/<a:videoFile r:link="rId\d+"\/>/.test(bareXml), `default video element changed: ${bareXml.match(/<a:videoFile[^>]*>/)?.[0] ?? ''}`)
+	assert.ok(bareXml.includes('p14:media') && /r:embed="rId\d+"/.test(bareXml), 'the embedded media extension changed')
+	assert.ok(!(await readPart(bareZip, 'ppt/slides/_rels/slide1.xml.rels')).includes('TargetMode="External"'), 'embedded media became external')
+})

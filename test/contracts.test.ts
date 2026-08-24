@@ -75,6 +75,26 @@ test('contract: slide keeps text, shape, and table semantics', async () => {
 	assert.equal([...xml.matchAll(/<a:gridCol /g)].length, 2, 'table grid width changed')
 })
 
+test('contract: default tableStyles.xml stays an empty list with the built-in def GUID', async () => {
+	const xml = await readPart(zip, 'ppt/tableStyles.xml')
+	assert.ok(xml.trimEnd().endsWith('def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>'), `default tableStyles.xml changed: ${xml}`)
+	assert.ok(!xml.includes('<a:tblStyle '), 'a default deck gained a table style')
+})
+
+test('contract: custom tableStyles write a:tblStyle and keep the built-in def GUID', async () => {
+	const STYLE_ID = '{A1B2C3D4-1111-2222-3333-444455556666}'
+	const pptx = new pptxgen()
+	pptx.tableStyles = [{ id: STYLE_ID, name: 'Contract Blue', firstRow: { bold: true, fill: { color: '4472C4' } } }]
+	pptx.addSlide().addTable([['H'], ['a']], { x: 1, y: 1, w: 4, tableStyleId: STYLE_ID, firstRow: true })
+	const stylesZip = await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer)
+	const xml = await readPart(stylesZip, 'ppt/tableStyles.xml')
+	assert.ok(xml.includes(`styleId="${STYLE_ID}"`) && xml.includes('styleName="Contract Blue"'), 'custom tblStyle missing')
+	assert.ok(xml.includes('def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"'), '@def was repointed at a custom style')
+	assert.ok(xml.includes('<a:firstRow>') && xml.includes('b="on"'), 'firstRow text style missing')
+	const slide = await readPart(stylesZip, 'ppt/slides/slide1.xml')
+	assert.ok(slide.includes(`<a:tableStyleId>${STYLE_ID}</a:tableStyleId>`), 'table did not reference the custom style')
+})
+
 test('contract: library version is generated from package.json', () => {
 	const pptx = new pptxgen()
 	assert.match(pptx.version, /^\d+\.\d+\.\d+/)

@@ -709,12 +709,25 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 	const objectName = opt.objectName ? encodeXmlEntities(opt.objectName) : `Media ${target._slideObjects.filter(obj => obj._type === SLIDE_OBJECT_TYPES.media).length}`
 	const slideData: ISlideObject = { _type: SLIDE_OBJECT_TYPES.media }
 
-	// STEP 1: REALITY-CHECK
-	if (!strPath && !strData && strType !== 'online') {
+	// `link` with no `path`/`data` used to throw, so treating it as "reference, do not embed" cannot
+	// change any deck that works today
+	const isLinked = !!strLink && !strPath && !strData && (strType === 'audio' || strType === 'video')
+	if (strLink && (strPath || strData) && strType !== 'online') {
+		console.warn('[pptxgenjs] addMedia: `link` is ignored when `path` or `data` is given - the media is embedded')
+	}
+
+	// STEP 1: REALITY-CHECK - what each media kind needs, rather than one chain of conditions
+	if (strType === 'audioCd') {
+		// `a:st`/`a:end` and their `@track` are all required by CT_AudioCD
+		if (typeof opt.audioCd?.start?.track !== 'number' || typeof opt.audioCd?.end?.track !== 'number') {
+			throw new Error('addMedia() error: `type:"audioCd"` requires `audioCd.start.track` and `audioCd.end.track`')
+		}
+	} else if (!strPath && !strData && strType !== 'online' && !isLinked) {
 		throw new Error('addMedia() error: either `data` or `path` are required!')
 	} else if (strData && !strData.toLowerCase().includes('base64,')) {
 		throw new Error('addMedia() error: `data` value lacks a base64 header! Ex: \'video/mpeg;base64,NMP[...]\')')
-	} else if (strCover && !strCover.toLowerCase().includes('base64,')) {
+	}
+	if (strCover && !strCover.toLowerCase().includes('base64,')) {
 		throw new Error('addMedia() error: `cover` value lacks a base64 header! Ex: \'data:image/png;base64,iV[...]\')')
 	}
 	// Online Video: requires `link`
@@ -723,7 +736,7 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 	}
 	// Timing-tree playback (ECMA-376 §19.5 CT_TLMediaNode): no silent fallbacks.
 	// `fullScrn` exists only on CT_TLMediaNodeVideo; linked `online` media has no embedded media node.
-	if (strType === 'audio' && opt.fullScreen) {
+	if (opt.fullScreen && strType !== 'video') {
 		throw new Error('addMedia() error: `fullScreen` is only valid on type "video"')
 	}
 	if (strType === 'online' && (opt.autoplay || opt.loop || opt.fullScreen || opt.mute)) {
@@ -732,7 +745,7 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 
 	// FIXME: 20190707
 	// strType = strData ? strData.split(';')[0].split('/')[0] : strType
-	strExtn = opt.extn || (strData ? strData.split(';')[0].split('/')[1] : strPath.split('.').pop()) || 'mp3'
+	strExtn = opt.extn || (strType === 'wav' ? 'wav' : strData ? strData.split(';')[0].split('/')[1] : (strPath || strLink).split('.').pop()) || 'mp3'
 
 	// STEP 2: Set type, media
 	slideData.mtype = strType
@@ -761,6 +774,11 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 	slideData.options.loop = opt.loop
 	slideData.options.fullScreen = opt.fullScreen
 	slideData.options.mute = opt.mute
+	slideData.options.contentType = opt.contentType
+	slideData.options.audioCd = opt.audioCd
+	slideData.options.isPhoto = opt.isPhoto
+	slideData.options.userDrawn = opt.userDrawn
+	slideData.options.isLinked = isLinked
 
 	// STEP 4: Add this media to this Slide Rels (rId/rels count spans all slides! Count all media to get next rId)
 	/**
@@ -772,7 +790,41 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 	 * <Relationship Id="rId2" Target="../media/media1.mov" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/video"/>
 	 * <Relationship Id="rId3" Target="../media/media1.mov" Type="http://schemas.microsoft.com/office/2007/relationships/media"/>
 	 */
-	if (strType === 'online') {
+	if (strType === 'audioCd') {
+		// CD audio references the listener's drive: no media part, no media relationship, cover only
+		const coverRid = getNewRelId(target)
+		target._relsMedia.push({
+			path: 'preencoded.png',
+			type: 'image/png',
+			extn: 'png',
+			data: strCover,
+			rId: coverRid,
+			Target: `../media/${imageTargetStem(target)}.png`,
+		})
+		slideData._coverRid = coverRid
+	} else if (strType === 'wav') {
+		// `a:wavAudioFile` is the legacy embedded-WAV element: one audio relationship, no `p14:media`
+		const relId1 = getNewRelId(target)
+		target._relsMedia.push({
+			path: strPath || 'preencoded.wav',
+			type: 'audio/wav',
+			extn: 'wav',
+			data: strData || '',
+			rId: relId1,
+			Target: `../media/media-${target._slideNum}-${target._relsMedia.length + 1}.wav`,
+		})
+		slideData.mediaRid = relId1
+		const coverRid = getNewRelId(target)
+		target._relsMedia.push({
+			path: 'preencoded.png',
+			type: 'image/png',
+			extn: 'png',
+			data: strCover,
+			rId: coverRid,
+			Target: `../media/${imageTargetStem(target)}.png`,
+		})
+		slideData._coverRid = coverRid
+	} else if (strType === 'online') {
 		const relId1 = getNewRelId(target)
 		// A: Add video
 		target._relsMedia.push({
@@ -799,6 +851,8 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 		const dupeItem = target._relsMedia.filter(item => item.path && item.path === strPath && item.type === strType + '/' + strExtn && !item.isDuplicate)[0]
 
 		// A: "relationships/video"
+		// Linked media keeps this exact three-relationship shape - the rIds the emitter derives from
+		// `mediaRid` stay valid - and only points the targets outside the package
 		const relId1 = getNewRelId(target)
 		target._relsMedia.push({
 			path: strPath || 'preencoded' + strExtn,
@@ -807,7 +861,8 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 			data: strData || '',
 			rId: relId1,
 			isDuplicate: !!(dupeItem?.Target),
-			Target: dupeItem?.Target ? dupeItem.Target : `../media/media-${target._slideNum}-${target._relsMedia.length + 1}.${strExtn}`,
+			isLinked,
+			Target: isLinked ? strLink : (dupeItem?.Target ? dupeItem.Target : `../media/media-${target._slideNum}-${target._relsMedia.length + 1}.${strExtn}`),
 		})
 		slideData.mediaRid = relId1
 
@@ -819,7 +874,8 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 			data: strData || '',
 			rId: getNewRelId(target),
 			isDuplicate: !!(dupeItem?.Target),
-			Target: dupeItem?.Target ? dupeItem.Target : `../media/media-${target._slideNum}-${target._relsMedia.length + 0}.${strExtn}`,
+			isLinked,
+			Target: isLinked ? strLink : (dupeItem?.Target ? dupeItem.Target : `../media/media-${target._slideNum}-${target._relsMedia.length + 0}.${strExtn}`),
 		})
 
 		// C: Add cover (preview/overlay) image
