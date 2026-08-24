@@ -798,9 +798,15 @@ export function genXmlPlaceholder (placeholderObj: ISlideObject | undefined, ext
 	const placeholderIdx = placeholderObj.options?._placeholderIdx ? placeholderObj.options._placeholderIdx : ''
 	const placeholderType = resolvePlaceholderType(placeholderObj.options?._placeholderType)
 
+	// `orient` and `sz` default to horz/full in the schema, so only a non-default is written
+	const placeholderOrient = placeholderObj.options?.orient === 'vert' ? ' orient="vert"' : ''
+	const placeholderSize = placeholderObj.options?.sz === 'half' || placeholderObj.options?.sz === 'quarter' ? ` sz="${placeholderObj.options.sz}"` : ''
+
 	const attrs =
 		`${placeholderIdx ? ' idx="' + placeholderIdx.toString() + '"' : ''}` +
 		`${placeholderType ? ` type="${placeholderType}"` : ''}` +
+		placeholderOrient +
+		placeholderSize +
 		`${placeholderObj.text && placeholderObj.text.length > 0 ? ' hasCustomPrompt="1"' : ''}`
 
 	const phTypeExt = extraOpts?.phTypeExt ?? placeholderObj.options?.phTypeExt

@@ -45,6 +45,7 @@ import {
 import { getImagePixelSize } from '../gen-media'
 import { genXmlCreationIdExt, genXmlModIdExt, TABLE_MOD_ID_BASE } from '../gen-revision'
 import { genXmlContentPartAlternate, genXmlOfficeAppAlternate } from './content-parts'
+import { genXmlCNvPr, genXmlCNvSpPr, genXmlLocks } from './non-visual'
 import { genXmlNvPrExtLst, genXmlPlaceholder, genXmlTextBody, textRunsHaveOmml } from './text'
 
 function nvPrModIdExt (modId?: number): string {
@@ -52,7 +53,15 @@ function nvPrModIdExt (modId?: number): string {
 }
 
 function genXmlNvPr (options?: ObjectOptions, phXml = '', extraExts: string[] = []): string {
-	return `<p:nvPr>${phXml}${genXmlNvPrExtLst(options, extraExts)}</p:nvPr>`
+	return `<p:nvPr${options?.userDrawn === true ? ' userDrawn="1"' : ''}>${phXml}${genXmlNvPrExtLst(options, extraExts)}</p:nvPr>`
+}
+
+function genXmlCNvPrHlinks (hlink?: { url?: string, slide?: number, _rId?: number, tooltip?: string }): string {
+	if (!hlink?._rId) return ''
+	const tip = hlink.tooltip ? encodeXmlEntities(hlink.tooltip) : ''
+	if (hlink.url) return `<a:hlinkClick r:id="rId${hlink._rId}" tooltip="${tip}"/>`
+	if (hlink.slide) return `<a:hlinkClick r:id="rId${hlink._rId}" tooltip="${tip}" action="ppaction://hlinksldjump"/>`
+	return ''
 }
 
 const ImageSizingXml = {
@@ -583,13 +592,13 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 
 					// STEP 1: Start Table XML
 					// NOTE: Non-numeric cNvPr id values will trigger "presentation needs repair" type warning in MS-PPT-2013
-					strXml = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${intTableNum * (slide._slideNum ?? 0) + 1}" name="${slideItemObj.options.objectName}"/>`
+					strXml = '<p:graphicFrame><p:nvGraphicFramePr>' + genXmlCNvPr(intTableNum * (slide._slideNum ?? 0) + 1, String(slideItemObj.options.objectName ?? ''), slideItemObj.options)
 					// When the table binds to a master/layout placeholder, emit `<p:ph type="tbl"/>` (ECMA-376 §4.4.1.33, issue #856)
 					const tblPh = placeholderObj ? genXmlPlaceholder(placeholderObj, slideItemObj.options) : ''
 					// MS-PPTX §2.3.1.19: each p14:modId must be unique on the slide (not a constant).
 					const tableModId = typeof slideItemObj.options.modId === 'number' ? slideItemObj.options.modId : TABLE_MOD_ID_BASE + idx
 					strXml +=
-						'<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr>' +
+						`<p:cNvGraphicFramePr>${genXmlLocks('a:graphicFrameLocks', slideItemObj.options.lock, ' noGrp="1"')}</p:cNvGraphicFramePr>` +
 					`  ${genXmlNvPr(slideItemObj.options, tblPh, [nvPrModIdExt(tableModId)])}` +
 					'</p:nvGraphicFramePr>'
 					strXml += `<p:xfrm><a:off x="${x || (x === 0 ? 0 : EMU)}" y="${y || (y === 0 ? 0 : EMU)}"/><a:ext cx="${cx || (cx === 0 ? 0 : EMU)}" cy="${cy || EMU
@@ -672,8 +681,10 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 						const itemOpts: ObjectOptions = slideItemObj.options ?? {}
 						// A: Table Height provided without rowH? Then distribute rows
 						let intRowH = 0 // IMPORTANT: Default must be zero for auto-sizing to work
-						if (Array.isArray(objTabOpts.rowH) && objTabOpts.rowH[rIdx]) intRowH = inch2Emu(Number(objTabOpts.rowH[rIdx]))
-						else if (objTabOpts.rowH && !isNaN(Number(objTabOpts.rowH))) intRowH = inch2Emu(Number(objTabOpts.rowH))
+						// `rowH` is either one value for every row or a per-row array; `inch2Emu` resolves inches, EMU and unit-suffixed strings alike
+						const rowHOpt = Array.isArray(objTabOpts.rowH) ? objTabOpts.rowH[rIdx] : objTabOpts.rowH
+						const rowHEmu = rowHOpt ? inch2Emu(rowHOpt) : NaN
+						if (!isNaN(rowHEmu)) intRowH = rowHEmu
 						else if (itemOpts.cy || itemOpts.h) {
 							intRowH = Math.round(
 								(itemOpts.h ? inch2Emu(itemOpts.h) : typeof itemOpts.cy === 'number' ? itemOpts.cy : 1) /
@@ -829,25 +840,18 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					// A: Start SHAPE / CONNECTOR ============================================
 					if (isConnector) {
 						strSlideXml += '<p:cxnSp>'
-						strSlideXml += `<p:nvCxnSpPr><p:cNvPr id="${shapeId}" name="${slideItemObj.options.objectName}"></p:cNvPr>`
-						strSlideXml += `<p:cNvCxnSpPr><a:stCxn id="${slideItemObj.options.line?.sourceId}" idx="${slideItemObj.options.line?.sourceAnchorPos ?? 0}"/><a:endCxn id="${slideItemObj.options.line?.targetId}" idx="${slideItemObj.options.line?.targetAnchorPos ?? 0}"/></p:cNvCxnSpPr>`
+						strSlideXml += `<p:nvCxnSpPr>${genXmlCNvPr(shapeId, String(slideItemObj.options.objectName ?? ''), slideItemObj.options)}`
+						const cxnLocks = genXmlLocks('a:cxnSpLocks', slideItemObj.options.lock)
+						strSlideXml += `<p:cNvCxnSpPr>${cxnLocks}<a:stCxn id="${slideItemObj.options.line?.sourceId}" idx="${slideItemObj.options.line?.sourceAnchorPos ?? 0}"/><a:endCxn id="${slideItemObj.options.line?.targetId}" idx="${slideItemObj.options.line?.targetAnchorPos ?? 0}"/></p:cNvCxnSpPr>`
 						strSlideXml += `${genXmlNvPr(slideItemObj.options, '', [nvPrModIdExt(slideItemObj.options.modId)])}</p:nvCxnSpPr><p:spPr>`
 					} else {
 						strSlideXml += '<p:sp>'
 						// B: The addition of the "txBox" attribute is the sole determiner of if an object is a shape or textbox
-						strSlideXml += `<p:nvSpPr><p:cNvPr id="${shapeId}" name="${slideItemObj.options.objectName}">`
-						// <Hyperlink>
-						if (slideItemObj.options.hyperlink?.url) {
-							strSlideXml += `<a:hlinkClick r:id="rId${slideItemObj.options.hyperlink._rId}" tooltip="${slideItemObj.options.hyperlink.tooltip ? encodeXmlEntities(slideItemObj.options.hyperlink.tooltip) : ''}"/>`
-						}
-						if (slideItemObj.options.hyperlink?.slide) {
-							strSlideXml += `<a:hlinkClick r:id="rId${slideItemObj.options.hyperlink._rId}" tooltip="${slideItemObj.options.hyperlink.tooltip ? encodeXmlEntities(slideItemObj.options.hyperlink.tooltip) : ''}" action="ppaction://hlinksldjump"/>`
-						}
-						// </Hyperlink>
-						strSlideXml += '</p:cNvPr>'
+						strSlideXml += '<p:nvSpPr>' + genXmlCNvPr(shapeId, String(slideItemObj.options.objectName ?? ''), slideItemObj.options, '',
+							genXmlCNvPrHlinks(slideItemObj.options.hyperlink))
 						// PowerPoint math zones are authored in text boxes; force txBox when OMML is present
 						const useTxBox = Boolean(slideItemObj.options?.isTextBox) || textRunsHaveOmml(slideItemObj.text)
-						strSlideXml += '<p:cNvSpPr' + (useTxBox ? ' txBox="1"/>' : '/>')
+						strSlideXml += genXmlCNvSpPr({ ...slideItemObj.options, isTextBox: useTxBox })
 						strSlideXml += genXmlNvPr(
 							slideItemObj.options,
 							slideItemObj._type === 'placeholder' ? genXmlPlaceholder(slideItemObj, slideItemObj.options) : genXmlPlaceholder(placeholderObj, slideItemObj.options),
@@ -918,19 +922,10 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 				case SLIDE_OBJECT_TYPES.image:
 					strSlideXml += '<p:pic>'
 					strSlideXml += '  <p:nvPicPr>'
-					strSlideXml += `<p:cNvPr id="${shapeId}" name="${slideItemObj.options.objectName}" descr="${encodeXmlEntities(
-						slideItemObj.options.altText || slideItemObj.image
-					)}">`
-					if (slideItemObj.hyperlink?.url) {
-						strSlideXml += `<a:hlinkClick r:id="rId${slideItemObj.hyperlink._rId}" tooltip="${slideItemObj.hyperlink.tooltip ? encodeXmlEntities(slideItemObj.hyperlink.tooltip) : ''
-						}"/>`
-					}
-					if (slideItemObj.hyperlink?.slide) {
-						strSlideXml += `<a:hlinkClick r:id="rId${slideItemObj.hyperlink._rId}" tooltip="${slideItemObj.hyperlink.tooltip ? encodeXmlEntities(slideItemObj.hyperlink.tooltip) : ''
-						}" action="ppaction://hlinksldjump"/>`
-					}
-					strSlideXml += '    </p:cNvPr>'
-					strSlideXml += '    <p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>'
+					strSlideXml += genXmlCNvPr(shapeId, String(slideItemObj.options.objectName ?? ''), slideItemObj.options, slideItemObj.options.altText || slideItemObj.image,
+						genXmlCNvPrHlinks(slideItemObj.hyperlink))
+					// `noChangeAspect` has always been emitted here; caller locks are added to it
+					strSlideXml += `    <p:cNvPicPr${slideItemObj.options.lock?.preferRelativeResize === true ? ' preferRelativeResize="1"' : ''}>${genXmlLocks('a:picLocks', slideItemObj.options.lock, ' noChangeAspect="1"')}</p:cNvPicPr>`
 					strSlideXml += genXmlNvPr(slideItemObj.options, genXmlPlaceholder(placeholderObj, slideItemObj.options), [nvPrModIdExt(slideItemObj.options.modId)])
 					strSlideXml += '  </p:nvPicPr>'
 					strSlideXml += '<p:blipFill>'
@@ -1156,8 +1151,9 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 				case SLIDE_OBJECT_TYPES.chart:
 					strSlideXml += '<p:graphicFrame>'
 					strSlideXml += ' <p:nvGraphicFramePr>'
-					strSlideXml += `   <p:cNvPr id="${shapeId}" name="${slideItemObj.options.objectName}" descr="${encodeXmlEntities(slideItemObj.options.altText || '')}"/>`
-					strSlideXml += '   <p:cNvGraphicFramePr/>'
+					strSlideXml += genXmlCNvPr(shapeId, String(slideItemObj.options.objectName ?? ''), slideItemObj.options, slideItemObj.options.altText || '')
+					const chartLocks = genXmlLocks('a:graphicFrameLocks', slideItemObj.options.lock)
+					strSlideXml += chartLocks ? `   <p:cNvGraphicFramePr>${chartLocks}</p:cNvGraphicFramePr>` : '   <p:cNvGraphicFramePr/>'
 					strSlideXml += genXmlNvPr(slideItemObj.options, genXmlPlaceholder(placeholderObj, slideItemObj.options), [nvPrModIdExt(slideItemObj.options.modId)])
 					strSlideXml += ' </p:nvGraphicFramePr>'
 					strSlideXml += ` <p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm>`
@@ -1173,8 +1169,9 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 				// PresentationML `p:grpSp` (ECMA-376 §19.3.1.22): nvGrpSpPr + grpSpPr + children.
 				// Child coords are group-relative; chOff is 0,0 and chExt matches the group size.
 					strSlideXml += '<p:grpSp>'
-					strSlideXml += `<p:nvGrpSpPr><p:cNvPr id="${shapeId}" name="${encodeXmlEntities(slideItemObj.options.objectName || `Group ${shapeId}`)}"/>`
-					strSlideXml += '<p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+					strSlideXml += `<p:nvGrpSpPr>${genXmlCNvPr(shapeId, slideItemObj.options.objectName || `Group ${shapeId}`, slideItemObj.options)}`
+					const grpLocks = genXmlLocks('a:grpSpLocks', slideItemObj.options.lock)
+					strSlideXml += (grpLocks ? `<p:cNvGrpSpPr>${grpLocks}</p:cNvGrpSpPr>` : '<p:cNvGrpSpPr/>') + `${genXmlNvPr(slideItemObj.options)}</p:nvGrpSpPr>`
 					strSlideXml += '<p:grpSpPr>'
 					strSlideXml += `<a:xfrm${locationAttr}>`
 					strSlideXml += `<a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/>`

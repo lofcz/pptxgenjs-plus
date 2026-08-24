@@ -3507,3 +3507,130 @@ test('OMML: malformed omml option throws instead of writing a corrupt package', 
 	const xml = await readPart(await writeZip(pptx3), 'ppt/slides/slide1.xml')
 	assert.ok(xml.includes('a&lt;b&amp;c'), 'valid OMML was rejected or mangled')
 })
+
+test('#137/#136/#153: presentation, view and document properties reach their parts', async () => {
+	const pptx = new pptxgen()
+	pptx.documentProps = { category: 'Reports', contentStatus: 'Final', keywords: 'a, b', language: 'de-DE', version: '2.1', manager: 'Ada', template: 'Corp.potx', hyperlinkBase: 'https://x.test', totalEditTime: 42 }
+	pptx.slideSizeType = 'screen16x9'
+	pptx.photoAlbum = { blackWhite: true, layout: '2pic', frame: 'frameStyle3' }
+	pptx.kinsoku = { lang: 'ja-JP', invalidStartChars: ')]}', invalidEndChars: '([{' }
+	pptx.printProps = { what: 'handouts4', colorMode: 'gray', frameSlides: true }
+	pptx.recentColors = ['FF0000', 'accent1']
+	pptx.viewProps = { lastView: 'sldThumbnailView', showComments: false, zoom: 75, gridSpacing: 0.5, snapToGrid: true, snapToObjects: false }
+	const slide = pptx.addSlide()
+	slide.addText('one', { x: 1, y: 1 })
+	slide.addNotes('speaker note')
+	pptx.addSlide().hidden = true
+
+	const zip = await writeZip(pptx)
+	const core = await readPart(zip, 'docProps/core.xml')
+	for (const el of ['<cp:category>Reports</cp:category>', '<cp:contentStatus>Final</cp:contentStatus>', '<cp:keywords>a, b</cp:keywords>', '<dc:language>de-DE</dc:language>', '<cp:version>2.1</cp:version>']) {
+		assert.ok(core.includes(el), `core.xml missing ${el}`)
+	}
+
+	const app = await readPart(zip, 'docProps/app.xml')
+	for (const el of ['<Manager>Ada</Manager>', '<Template>Corp.potx</Template>', '<HyperlinkBase>https://x.test</HyperlinkBase>', '<TotalTime>42</TotalTime>', '<Notes>1</Notes>', '<HiddenSlides>1</HiddenSlides>', '<Paragraphs>1</Paragraphs>']) {
+		assert.ok(app.includes(el), `app.xml missing ${el}`)
+		const tag = /^<(\w+)>/.exec(el)?.[1] ?? ''
+		assert.equal((app.match(new RegExp(`<${tag}>`, 'g')) ?? []).length, 1, `app.xml emits <${tag}> more than once`)
+	}
+
+	const pres = await readPart(zip, 'ppt/presentation.xml')
+	assert.ok(pres.includes(' type="screen16x9"/>'), 'sldSz type missing')
+	assert.ok(pres.includes('<p:photoAlbum bw="1" layout="2pic" frame="frameStyle3"/>'), `photoAlbum wrong: ${pres.slice(0, 400)}`)
+	assert.ok(pres.includes('<p:kinsoku lang="ja-JP" invalStChars=")]}" invalEndChars="([{"/>'), 'kinsoku wrong')
+	// CT_Presentation order: photoAlbum/kinsoku sit between notesSz and defaultTextStyle
+	const order = ['<p:notesSz', '<p:photoAlbum', '<p:kinsoku', '<p:defaultTextStyle>'].map(tag => pres.indexOf(tag))
+	assert.deepEqual(order, [...order].sort((a, b) => a - b), `CT_Presentation child order violated: ${order.join(',')}`)
+
+	// prnPr / clrMru belong on CT_PresentationProperties, not CT_Presentation
+	const presPr = await readPart(zip, 'ppt/presProps.xml')
+	assert.ok(presPr.includes('<p:prnPr prnWhat="handouts4" clrMode="gray" frameSlides="1"/>'), 'prnPr wrong')
+	assert.ok(presPr.includes('<p:clrMru><a:srgbClr val="FF0000"/><a:schemeClr val="accent1"/></p:clrMru>'), 'clrMru wrong')
+	const propsOrder = ['<p:prnPr', '<p:clrMru>'].map(tag => presPr.indexOf(tag))
+	assert.deepEqual(propsOrder, [...propsOrder].sort((a, b) => a - b), `CT_PresentationProperties child order violated: ${propsOrder.join(',')}`)
+
+	const view = await readPart(zip, 'ppt/viewProps.xml')
+	assert.ok(view.includes('lastView="sldThumbnailView"'), 'lastView missing')
+	assert.ok(view.includes('showComments="0"'), 'showComments missing')
+	assert.ok(view.includes('<p:cSldViewPr snapToGrid="1" snapToObjects="0">'), `snap attrs wrong: ${view}`)
+	assert.ok(view.includes('<a:sx n="75" d="100"/>'), 'zoom missing')
+	assert.ok(view.includes('<p:gridSpacing cx="457200" cy="457200"/>'), 'gridSpacing missing')
+
+	const partial = new pptxgen()
+	partial.kinsoku = { lang: 'ja-JP' }
+	partial.addSlide()
+	assert.ok(!(await readPart(await writeZip(partial), 'ppt/presentation.xml')).includes('<p:kinsoku'), 'incomplete kinsoku was emitted')
+
+	const bare = new pptxgen()
+	bare.addSlide()
+	const bareZip = await writeZip(bare)
+	const barePres = await readPart(bareZip, 'ppt/presentation.xml')
+	for (const tag of ['<p:photoAlbum', '<p:kinsoku', 'type="']) assert.ok(!barePres.includes(tag), `default presentation.xml gained ${tag}`)
+	const barePresPr = await readPart(bareZip, 'ppt/presProps.xml')
+	for (const tag of ['<p:prnPr', '<p:clrMru']) assert.ok(!barePresPr.includes(tag), `default presProps.xml gained ${tag}`)
+	const bareView = await readPart(bareZip, 'ppt/viewProps.xml')
+	assert.ok(bareView.includes('<a:sx n="136" d="100"/>') && bareView.includes('<p:gridSpacing cx="76200" cy="76200"/>'), 'default viewProps.xml changed')
+	assert.ok(!bareView.includes('lastView=') && !bareView.includes('showComments='), 'default viewProps.xml gained attributes')
+})
+
+test('#149: slide layout and placeholder metadata', async () => {
+	const pptx = new pptxgen()
+	pptx.defineSlideMaster({
+		title: 'SECTION',
+		layoutType: 'secHead',
+		matchingName: 'Section Header',
+		showMasterShapes: false,
+		showMasterPlaceholderAnimation: false,
+		userDrawn: true,
+		colorMapOverride: { bg1: 'dk1', tx1: 'lt1' },
+		transition: { type: 'fade', duration: 500 },
+		objects: [{ placeholder: { options: { name: 'ttl', type: 'title', x: 1, y: 1, w: 6, h: 1, orient: 'vert', sz: 'half', userDrawn: true }, text: 'Section' } }],
+	})
+	pptx.defineSlideMaster({ title: 'PLAIN', preserve: false, objects: [{ placeholder: { options: { name: 'b', type: 'body', x: 1, y: 1, w: 6, h: 1 } } }] })
+	pptx.addSlide({ masterName: 'SECTION' })
+
+	const zip = await writeZip(pptx)
+	assert.ok((zip.file(/slideLayout\d+\.xml/) ?? []).length >= 2, 'expected layout parts')
+
+	let layout = ''
+	for (const file of zip.file(/ppt\/slideLayouts\/slideLayout\d+\.xml/) ?? []) {
+		const xml = await file.async('string')
+		if (xml.includes('type="secHead"')) layout = xml
+	}
+	assert.ok(layout, 'no layout carried the metadata')
+
+	assert.ok(layout.includes(' preserve="1" type="secHead" matchingName="Section Header" showMasterSp="0" showMasterPhAnim="0" userDrawn="1">'), `p:sldLayout attrs wrong: ${/<p:sldLayout[^>]*>/.exec(layout)?.[0] ?? ''}`)
+	assert.ok(layout.includes('<a:overrideClrMapping bg1="dk1" tx1="lt1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'), `clrMapOvr wrong: ${/<p:clrMapOvr>[\s\S]*?<\/p:clrMapOvr>/.exec(layout)?.[0] ?? ''}`)
+
+	const seq = ['<p:cSld', '</p:cSld>', '<p:clrMapOvr>', '<p:transition'].map(tag => layout.indexOf(tag))
+	assert.ok(seq.every(idx => idx > -1), `a p:sldLayout child is missing: ${seq.join(',')}`)
+	assert.deepEqual(seq, [...seq].sort((a, b) => a - b), `CT_SlideLayout child order violated: ${seq.join(',')}`)
+
+	assert.ok(/<p:ph\s+idx="\d+"\s+type="title"\s+orient="vert"\s+sz="half"\s+hasCustomPrompt="1"/.test(layout.replace(/\s+/g, ' ')), `p:ph wrong: ${/<p:ph[\s\S]*?\/>/.exec(layout)?.[0] ?? ''}`)
+	assert.ok(layout.includes('<p:nvPr userDrawn="1">'), 'p:nvPr@userDrawn missing')
+
+	let plain = ''
+	for (const file of zip.file(/ppt\/slideLayouts\/slideLayout\d+\.xml/) ?? []) {
+		const xml = await file.async('string')
+		if (xml.includes('name="PLAIN"')) plain = xml
+	}
+	assert.ok(plain, 'no PLAIN layout')
+	assert.ok(!/<p:sldLayout[^>]*preserve=/.test(plain), 'preserve:false was ignored')
+
+	const bare = new pptxgen()
+	bare.defineSlideMaster({ title: 'BARE', objects: [{ placeholder: { options: { name: 'b', type: 'body', x: 1, y: 1, w: 6, h: 1 } } }] })
+	bare.addSlide({ masterName: 'BARE' })
+	const bareZip = await writeZip(bare)
+	for (const file of bareZip.file(/ppt\/slideLayouts\/slideLayout\d+\.xml/) ?? []) {
+		const xml = await file.async('string')
+		if (!xml.includes('name="BARE"') && !xml.includes('name="DEFAULT"')) continue
+		const tag = /<p:sldLayout[^>]*>/.exec(xml)?.[0] ?? ''
+		assert.ok(tag.includes('preserve="1"'), `${file.name} lost preserve="1"`)
+		for (const attr of ['type=', 'matchingName=', 'showMasterSp=', 'showMasterPhAnim=', 'userDrawn=']) {
+			assert.ok(!tag.includes(attr), `${file.name} gained ${attr}`)
+		}
+		assert.ok(xml.includes('<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>'), `${file.name} lost the inherited colour mapping`)
+		assert.ok(!xml.includes('orient=') && !xml.includes(' sz="half"') && !xml.includes('userDrawn='), `${file.name} gained placeholder metadata`)
+	}
+})

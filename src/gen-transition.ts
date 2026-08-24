@@ -8,7 +8,7 @@
  * tools use the Fallback, so the file stays valid everywhere.
  */
 import type { TRANSITION_TYPE } from './core-enums'
-import type { PresSlide, SlideTransitionProps } from './core-interfaces'
+import type { SlideTransitionProps } from './core-interfaces'
 
 const P14_NS = 'http://schemas.microsoft.com/office/powerpoint/2010/main'
 const P15_NS = 'http://schemas.microsoft.com/office/powerpoint/2012/main'
@@ -136,7 +136,7 @@ function dirAttr(valid: string[], p: SlideTransitionProps): string {
  * Generates `<p:transition>...</p:transition>` for a slide, or '' if no transition is set.
  * Placed after `<p:clrMapOvr>` and before `<p:timing>` in the `sld` content model (ECMA-376 §19.3.1.38).
  */
-export function genXmlTransition(slide: PresSlide): string {
+export function genXmlTransition(slide: { transition?: SlideTransitionProps }): string {
 	const t = slide.transition
 	if (!t || !t.type) return ''
 

@@ -87,8 +87,15 @@ import {
 	AddSlideProps,
 	CompressionLevel,
 	ChangesInfoProps,
+	Color,
 	CommentAuthorProps,
 	DefineLayoutProps,
+	DocumentProps,
+	KinsokuProps,
+	PhotoAlbumProps,
+	PrintProps,
+	SlideSizeType,
+	ViewProps,
 	GuideProps,
 	IPresentationProps,
 	MediaOnError,
@@ -367,6 +374,20 @@ export default class PptxGenJS implements IPresentationProps {
 	 * @example pptx.notesGuides = [{ orient: 'horz', pos: 2 }]
 	 */
 	public notesGuides: GuideProps[] = []
+	/** Additional document properties written to `docProps`. */
+	public documentProps?: DocumentProps
+	/** Slide-size preset (`p:sldSz@type`). */
+	public slideSizeType?: SlideSizeType
+	/** Photo-album mode (`p:photoAlbum`). */
+	public photoAlbum?: PhotoAlbumProps
+	/** East Asian line-breaking rules (`p:kinsoku`). */
+	public kinsoku?: KinsokuProps
+	/** Print defaults (`p:prnPr` on `presentationPr`). */
+	public printProps?: PrintProps
+	/** Recently-used colours (`p:clrMru` on `presentationPr`). */
+	public recentColors?: Color[]
+	/** View properties (`ppt/viewProps.xml`). Unset keeps the previous hardcoded viewPr. */
+	public viewProps?: ViewProps
 
 	/**
 	 * Modern comment authors (MS-PPTX §2.16). Emitted to `ppt/authors.xml`.
@@ -720,8 +741,8 @@ export default class PptxGenJS implements IPresentationProps {
 			}
 			zip.file('[Content_Types].xml', genXml.makeXmlContTypes(this.slides, this.slideLayouts, this.masterSlide, trackingParts)) // TODO: pass only `this` like below! 20200206
 			zip.file('_rels/.rels', genXml.makeXmlRootRels())
-			zip.file('docProps/app.xml', genXml.makeXmlApp(this.slides, this.company)) // TODO: pass only `this` like below! 20200206
-			zip.file('docProps/core.xml', genXml.makeXmlCore(this.title, this.subject, this.author, this.revision, this.created, this.modified)) // TODO: pass only `this` like below! 20200206
+			zip.file('docProps/app.xml', genXml.makeXmlApp(this.slides, this.company, this.documentProps)) // TODO: pass only `this` like below! 20200206
+			zip.file('docProps/core.xml', genXml.makeXmlCore(this.title, this.subject, this.author, this.revision, this.created, this.modified, this.documentProps)) // TODO: pass only `this` like below! 20200206
 			zip.file('ppt/_rels/presentation.xml.rels', genXml.makeXmlPresentationRels(this.slides, trackingParts))
 			zip.file('ppt/theme/theme1.xml', genXml.makeXmlTheme(this))
 			// notesMaster gets its own theme part (Office repair creates theme2 when notesMaster shares theme1; Juliussssssss 9bdfe09).
@@ -729,7 +750,7 @@ export default class PptxGenJS implements IPresentationProps {
 			zip.file('ppt/presentation.xml', genXml.makeXmlPresentation(this))
 			zip.file('ppt/presProps.xml', genXml.makeXmlPresProps(this))
 			zip.file('ppt/tableStyles.xml', genXml.makeXmlTableStyles())
-			zip.file('ppt/viewProps.xml', genXml.makeXmlViewProps())
+			zip.file('ppt/viewProps.xml', genXml.makeXmlViewProps(this))
 
 			// C: Create a Layout/Master/Rel/Slide file for each SlideLayout and Slide
 			this.slideLayouts.forEach((layout, idx) => {
@@ -1038,6 +1059,14 @@ export default class PptxGenJS implements IPresentationProps {
 			_slideObjects: [],
 			background: propsClone.background || null,
 			bkgd: propsClone.bkgd || null,
+			layoutType: propsClone.layoutType,
+			matchingName: propsClone.matchingName,
+			preserve: propsClone.preserve,
+			showMasterShapes: propsClone.showMasterShapes,
+			showMasterPlaceholderAnimation: propsClone.showMasterPlaceholderAnimation,
+			userDrawn: propsClone.userDrawn,
+			colorMapOverride: propsClone.colorMapOverride,
+			transition: propsClone.transition,
 		}
 
 		// STEP 1: Create the Slide Master/Layout
