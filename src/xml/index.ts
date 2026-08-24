@@ -1,5 +1,6 @@
 export * from './content-parts'
 export * from './hyperlink'
+export * from './line'
 export * from './package'
 export * from './relationships'
 export * from './slide'

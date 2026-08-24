@@ -58,6 +58,7 @@ import { getImagePixelSize } from '../gen-media'
 import { genXmlCreationIdExt, genXmlModIdExt, TABLE_MOD_ID_BASE } from '../gen-revision'
 import { genXmlContentPartAlternate, genXmlOfficeAppAlternate } from './content-parts'
 import { genXmlHyperlink } from './hyperlink'
+import { genXmlLine } from './line'
 import { genXmlCNvPr, genXmlCNvSpPr, genXmlLocks } from './non-visual'
 import { MC_NS, genXmlNvPrExtLst, genXmlPlaceholder, genXmlTextBody, textRunsHaveOmml } from './text'
 
@@ -218,27 +219,6 @@ function genXmlAudioCdTime (tag: string, point?: AudioCdTimeProps): string {
 	const track = Math.min(255, Math.max(0, Math.round(point?.track ?? 0)))
 	const time = typeof point?.time === 'number' && isFinite(point.time) && point.time > 0 ? ` time="${Math.round(point.time)}"` : ''
 	return `<${tag} track="${track}"${time}/>`
-}
-
-/**
- * Create the `a:ln` outline block for a shape/image
- * @param {ShapeLineProps} line - line options
- * @return {string} XML
- */
-export function genXmlLine (line: ShapeLineProps): string {
-	// ECMA-376 §5.1.2.1.34: `<a:ln>` carries `w` and `cap` attributes (cap = line ending style, issue #782)
-	const attrs = (line.width ? ` w="${valToPts(line.width)}"` : '') + (line.cap && ['flat', 'sq', 'rnd'].includes(line.cap) ? ` cap="${line.cap}"` : '')
-	let xml = `<a:ln${attrs}>`
-	const hasGrad = !!(line.gradient || line.type === 'gradient' || line.type === 'linearGradient')
-	if (line.type !== 'none' && (line.color || hasGrad)) {
-		xml += genXmlColorSelection(hasGrad && !line.type ? { ...line, type: 'gradient' } : line)
-	}
-	if (line.dashType) xml += `<a:prstDash val="${line.dashType}"/>`
-	if (line.beginArrowType) xml += `<a:headEnd type="${line.beginArrowType}"/>`
-	if (line.endArrowType) xml += `<a:tailEnd type="${line.endArrowType}"/>`
-	// FUTURE: `endArrowSize` < a: headEnd type = "arrow" w = "lg" len = "lg" /> 'sm' | 'med' | 'lg'(values are 1 - 9, making a 3x3 grid of w / len possibilities)
-	xml += '</a:ln>'
-	return xml
 }
 
 /**
