@@ -10,6 +10,8 @@ export const EMU = 914400 // One (1) inch (OfficeXML measures in EMU (English Me
 export const ONEPT = 12700 // One (1) point (pt)
 export const CRLF = '\r\n' // AKA: Chr(13) & Chr(10)
 export const LAYOUT_IDX_SERIES_BASE = 2147483649
+/** ECMA-376 20.1.10.55 ST_RectAlignment — where a tiled picture fill starts */
+export const TILE_ALIGNMENTS = new Set(['tl', 't', 'tr', 'l', 'ctr', 'r', 'bl', 'b', 'br'])
 export const REGEX_HEX_COLOR = /^[0-9a-fA-F]{6}$/
 export const LINEH_MODIFIER = 1.67 // AKA: Golden Ratio Typography
 
@@ -25,7 +27,7 @@ export const DEF_FONT_TITLE_SIZE = 18
 export const DEF_PRES_LAYOUT = 'LAYOUT_16x9'
 export const DEF_PRES_LAYOUT_NAME = 'DEFAULT'
 export const DEF_SHAPE_LINE_COLOR = '333333'
-export const DEF_SHAPE_SHADOW = { type: 'outer', blur: 3, offset: 23000 / 12700, angle: 90, color: '000000', opacity: 0.35, rotateWithShape: true } satisfies Required<ShadowProps>
+export const DEF_SHAPE_SHADOW = { type: 'outer', blur: 3, offset: 23000 / 12700, angle: 90, color: '000000', opacity: 0.35, rotateWithShape: true } satisfies Omit<Required<ShadowProps>, 'preset'>
 export const DEF_SLIDE_BKGD = 'FFFFFF'
 export const DEF_SLIDE_MARGIN_IN: [number, number, number, number] = [0.5, 0.5, 0.5, 0.5] // TRBL-style
 export const DEF_TEXT_SHADOW = { type: 'outer', blur: 8, offset: 4, angle: 270, color: '000000', opacity: 0.75 }
@@ -283,6 +285,10 @@ export enum ShapeType {
 	'actionButtonSound' = 'actionButtonSound',
 	'arc' = 'arc',
 	'bentArrow' = 'bentArrow',
+	'bentConnector2' = 'bentConnector2',
+	'bentConnector3' = 'bentConnector3',
+	'bentConnector4' = 'bentConnector4',
+	'bentConnector5' = 'bentConnector5',
 	'bentUpArrow' = 'bentUpArrow',
 	'bevel' = 'bevel',
 	'blockArc' = 'blockArc',
@@ -306,6 +312,10 @@ export enum ShapeType {
 	'corner' = 'corner',
 	'cornerTabs' = 'cornerTabs',
 	'cube' = 'cube',
+	'curvedConnector2' = 'curvedConnector2',
+	'curvedConnector3' = 'curvedConnector3',
+	'curvedConnector4' = 'curvedConnector4',
+	'curvedConnector5' = 'curvedConnector5',
 	'curvedDownArrow' = 'curvedDownArrow',
 	'curvedLeftArrow' = 'curvedLeftArrow',
 	'curvedRightArrow' = 'curvedRightArrow',
@@ -426,6 +436,7 @@ export enum ShapeType {
 	'star6' = 'star6',
 	'star7' = 'star7',
 	'star8' = 'star8',
+	'straightConnector1' = 'straightConnector1',
 	'stripedRightArrow' = 'stripedRightArrow',
 	'sun' = 'sun',
 	'swooshArrow' = 'swooshArrow',
@@ -498,6 +509,10 @@ export enum SHAPE_TYPE {
 	ARC = 'arc',
 	BALLOON = 'wedgeRoundRectCallout',
 	BENT_ARROW = 'bentArrow',
+	BENT_CONNECTOR_2 = 'bentConnector2',
+	BENT_CONNECTOR_3 = 'bentConnector3',
+	BENT_CONNECTOR_4 = 'bentConnector4',
+	BENT_CONNECTOR_5 = 'bentConnector5',
 	BENT_UP_ARROW = 'bentUpArrow',
 	BEVEL = 'bevel',
 	BLOCK_ARC = 'blockArc',
@@ -514,6 +529,10 @@ export enum SHAPE_TYPE {
 	CORNER_TABS = 'cornerTabs',
 	CROSS = 'plus',
 	CUBE = 'cube',
+	CURVED_CONNECTOR_2 = 'curvedConnector2',
+	CURVED_CONNECTOR_3 = 'curvedConnector3',
+	CURVED_CONNECTOR_4 = 'curvedConnector4',
+	CURVED_CONNECTOR_5 = 'curvedConnector5',
 	CURVED_DOWN_ARROW = 'curvedDownArrow',
 	CURVED_DOWN_RIBBON = 'ellipseRibbon',
 	CURVED_LEFT_ARROW = 'curvedLeftArrow',
@@ -655,6 +674,7 @@ export enum SHAPE_TYPE {
 	STAR_6_POINT = 'star6',
 	STAR_7_POINT = 'star7',
 	STAR_8_POINT = 'star8',
+	STRAIGHT_CONNECTOR_1 = 'straightConnector1',
 	STRIPED_RIGHT_ARROW = 'stripedRightArrow',
 	SUN = 'sun',
 	SWOOSH_ARROW = 'swooshArrow',
@@ -692,6 +712,10 @@ export type SHAPE_NAME =
 	| 'actionButtonSound'
 	| 'arc'
 	| 'bentArrow'
+	| 'bentConnector2'
+	| 'bentConnector3'
+	| 'bentConnector4'
+	| 'bentConnector5'
 	| 'bentUpArrow'
 	| 'bevel'
 	| 'blockArc'
@@ -717,6 +741,10 @@ export type SHAPE_NAME =
 	| 'corner'
 	| 'cornerTabs'
 	| 'cube'
+	| 'curvedConnector2'
+	| 'curvedConnector3'
+	| 'curvedConnector4'
+	| 'curvedConnector5'
 	| 'curvedDownArrow'
 	| 'curvedLeftArrow'
 	| 'curvedRightArrow'
@@ -837,6 +865,7 @@ export type SHAPE_NAME =
 	| 'star6'
 	| 'star7'
 	| 'star8'
+	| 'straightConnector1'
 	| 'stripedRightArrow'
 	| 'sun'
 	| 'swooshArrow'

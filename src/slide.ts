@@ -7,6 +7,7 @@ import {
 	AddSlideProps,
 	AnimationConfig,
 	BackgroundProps,
+	ConnectorProps,
 	Group,
 	GroupProps,
 	CommentProps,
@@ -59,6 +60,8 @@ function cloneTextRunOpts (options?: TextPropsOptions): TextPropsOptions | undef
 	delete runOpts.reflection
 	delete runOpts.shadow
 	delete runOpts.blur
+	delete runOpts.fillOverlay
+	delete runOpts.effectDag
 	return runOpts
 }
 
@@ -253,6 +256,16 @@ export default class Slide {
 		const children: ISlideObject[] = options._objects ? [...options._objects] : []
 		if (build) build(genObj.createGroupBuilder(this, children))
 		genObj.addGroupDefinition(this, cloneOpts(options), children)
+		return this
+	}
+
+	/**
+	 * Add a connector (`p:cxnSp`). Additive convenience over `line.isConnector`.
+	 * Glue with `start`/`end` `objectName`s, or pass numeric `line.sourceId`/`targetId`.
+	 * @example slide.addConnector({ type: 'straightConnector1', start: { shape: 'BoxA', site: 3 }, end: { shape: 'BoxB', site: 1 } })
+	 */
+	addConnector(options?: ConnectorProps): Slide {
+		genObj.addConnectorDefinition(this, cloneOpts(options ?? {}))
 		return this
 	}
 

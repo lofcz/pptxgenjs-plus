@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bullet `size` / `sizePts` / `fontFace` / `image` on the existing `bullet` object (`a:buSzPct`, `a:buSzPts`, `a:buFont`, `a:buBlip`)
 - `rtlColumns` (`a:bodyPr@rtlCol`, follows `rtlMode` unless set) and `kumimoji` for East Asian vertical numerals
 - `hyperlinkHover` plus action `sound` and settable `highlightClick` / `stopSoundsOnClick` on text, shapes, and images
+- Picture fills on shapes and table cells via `fill: { type: 'image', image: { data|path, sizing, scale, alignment } }` (`a:blipFill` stretch/tile)
+- Remaining DrawingML effects: `fillOverlay`, preset shadows (`shadow: { type: 'preset', preset: 'shdw1'..'shdw20' }`), `effectDag`, image `alphaEffects`, and `fill: { type: 'group' }` (`a:grpFill`)
+- Image `recolor` (`ImageRecolorProps`) for duotone, grayscale, brightness/contrast, bi-level, and color-change on `a:blip` (does not replace SVG `fill` path recolor)
+- Shape/image `styleRef` emits `p:style` (`lnRef`/`fillRef`/`effectRef`/`fontRef`) so theme swaps can restyle objects
+- `slide.addConnector(options)` convenience that maps onto the existing connector fields, with optional `start`/`end` `objectName` glue
 - Text `vertOverflow` / `horzOverflow` emit ECMA-376 `a:bodyPr` overflow attrs so overflowing runs can clip instead of spilling out of the shape
 - Package-contract tests for opt-in `addFont` (Font parts, `application/x-fontdata`, Presentation font rels); default export embeds nothing
 - `pptx.slideShow` emits a spec-valid `p:showPr` with the required present/browse/kiosk choice, plus loop/narration/animation/timing flags

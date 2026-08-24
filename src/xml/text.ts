@@ -573,6 +573,8 @@ export function genXmlTextBody (slideObj: ISlideObject | TableCell): string {
 			delete runOpts.softEdge
 			delete runOpts.reflection
 			delete runOpts.shadow
+			delete runOpts.fillOverlay
+			delete runOpts.effectDag
 			itext.options = runOpts
 		}
 		if (idx === 0 && itext.options && !itext.options.bullet && opts.bullet) itext.options.bullet = opts.bullet
@@ -690,7 +692,7 @@ export function genXmlTextBody (slideObj: ISlideObject | TableCell): string {
 				// NOTE: This loop will pick up unecessary keys (`x`, etc.), but it doesnt hurt anything
 				// `glow` / softEdge / reflection belong on the shape effectLst (not per-run), unless set on the run itself
 				// `omml` is a run-level math payload — inheriting it would replace sibling plain-text runs
-				if (key === 'glow' || key === 'softEdge' || key === 'reflection' || key === 'shadow' || key === 'blur' || key === 'omml') return
+				if (key === 'glow' || key === 'softEdge' || key === 'reflection' || key === 'shadow' || key === 'blur' || key === 'fillOverlay' || key === 'effectDag' || key === 'omml') return
 				if (key !== 'bullet' && !textOpts[key]) textOpts[key] = val
 			})
 

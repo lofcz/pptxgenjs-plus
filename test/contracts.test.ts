@@ -659,3 +659,54 @@ test('contract: invalid hover and sound input is dropped with a warning', async 
 	assert.doesNotMatch(xml, /<a:snd /, 'no invalid sound may be written')
 	assert.doesNotMatch(xml, /r:id="rId0"/, 'no link may reference a non-existent relationship')
 })
+
+const FILL_PNG = 'image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII='
+
+test('contract: picture fills emit a:blipFill wired to an image relationship', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addShape(pptx.ShapeType.rect, { x: 1, y: 1, w: 2, h: 1, fill: { type: 'image', image: { data: FILL_PNG } } })
+	slide.addShape(pptx.ShapeType.rect, { x: 4, y: 1, w: 2, h: 1, fill: { type: 'image', image: { data: FILL_PNG, sizing: 'tile', scale: 50, alignment: 'ctr', rotateWithShape: false } } })
+	slide.addTable([[{ text: 'i', options: { fill: { type: 'image', image: { data: FILL_PNG } } } }]], { x: 1, y: 3, w: 4 })
+	const picZip = await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer)
+	await assertPptxPackageContracts(picZip)
+	const xml = await readPart(picZip, 'ppt/slides/slide1.xml')
+
+	assert.doesNotMatch(xml, /NaN|undefined/, 'picture-fill options must not leak invalid values')
+	assert.match(xml, /<a:blipFill rotWithShape="1"><a:blip r:embed="rId\d+"\/><a:stretch><a:fillRect\/><\/a:stretch><\/a:blipFill>/, 'stretch picture fill missing')
+	assert.match(xml, /<a:blipFill rotWithShape="0"><a:blip r:embed="rId\d+"\/><a:tile tx="0" ty="0" sx="50000" sy="50000" flip="none" algn="ctr"\/><\/a:blipFill>/, 'tiled picture fill missing')
+	assert.match(xml, /<a:tcPr[\s\S]*?<a:blipFill /, 'table cell picture fill missing')
+
+	const rels = await readPart(picZip, 'ppt/slides/_rels/slide1.xml.rels')
+	const embeds = [...xml.matchAll(/<a:blip r:embed="(rId\d+)"\/>/g)].map(match => match[1])
+	assert.equal(embeds.length, 3, 'expected one blip per picture fill')
+	embeds.forEach(rid => {
+		assert.match(rels, new RegExp(`<Relationship Id="${rid}" Type="[^"]*\\/image" Target="\\.\\./media/[^"]+"\\/>`), `${rid} has no image relationship`)
+	})
+	// identical bytes share one part (content-hash dedupe); each fill still has its own relationship
+	assert.ok(Object.keys(picZip.files).some(file => /^ppt\/media\/.+/.test(file)), 'image part missing')
+})
+
+test('contract: invalid picture fills degrade instead of writing broken XML', async () => {
+	const warnings: string[] = []
+	const origWarn = console.warn
+	console.warn = (msg: string) => warnings.push(String(msg))
+	let xml = ''
+	try {
+		const pptx = new pptxgen()
+		const slide = pptx.addSlide()
+		slide.addShape(pptx.ShapeType.rect, { x: 1, y: 3, w: 2, h: 1, fill: { type: 'image', image: {} } })
+		slide.addShape(pptx.ShapeType.rect, { x: 4, y: 3, w: 2, h: 1, fill: { type: 'image', image: { data: 'not-base64' } } })
+		slide.addShape(pptx.ShapeType.rect, { x: 1, y: 5, w: 2, h: 1, fill: { type: 'image', image: { data: FILL_PNG, sizing: 'tile', alignment: 'middle' as unknown as 'ctr' } } })
+		xml = await readPart(await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer), 'ppt/slides/slide1.xml')
+	} finally {
+		console.warn = origWarn
+	}
+
+	assert.ok(warnings.some(w => w.includes('requires `fill.image.data` or `fill.image.path`')), 'missing image must warn')
+	assert.ok(warnings.some(w => w.includes('lacks a base64 header')), 'bad image data must warn')
+	assert.ok(warnings.some(w => w.includes('unknown tile alignment "middle"')), 'bad alignment must warn')
+	assert.equal([...xml.matchAll(/<a:blip r:embed=/g)].length, 1, 'only the valid picture fill may emit a blip')
+	assert.match(xml, /algn="tl"/, 'an unknown tile alignment falls back to tl')
+	assert.doesNotMatch(xml, /r:embed="rId0"/, 'no fill may reference a non-existent relationship')
+})
