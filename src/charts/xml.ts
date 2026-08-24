@@ -11,6 +11,7 @@ import {
 	BARCHART_COLORS,
 	CHART_NAME,
 	CHART_TYPE,
+	isChartexType,
 	DEF_FONT_COLOR,
 	DEF_FONT_SIZE,
 	DEF_FONT_TITLE_SIZE,
@@ -109,7 +110,7 @@ export function makeXmlCharts (rel: ISlideRelChart): string {
 			usesSecondaryValAxis = usesSecondaryValAxis || (options.secondaryValAxis ?? false)
 			strXml += makeChartType(type.type, type.data, options, valAxisId, catAxisId, true, rel.data)
 		})
-	} else if (rel.opts._type) {
+	} else if (rel.opts._type && !isChartexType(rel.opts._type)) {
 		strXml += makeChartType(rel.opts._type, rel.data, rel.opts, AXIS_ID_VALUE_PRIMARY, AXIS_ID_CATEGORY_PRIMARY, false, rel.data)
 	}
 

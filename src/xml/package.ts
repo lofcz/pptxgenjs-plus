@@ -2,12 +2,13 @@
  * OOXML package-part rendering.
  */
 
-import { CRLF, EMU, LAYOUT_IDX_SERIES_BASE, SLDNUMFLDID, SLIDE_OBJECT_TYPES } from '../core-enums'
+import { CHART_STYLE, CRLF, EMU, LAYOUT_IDX_SERIES_BASE, OOXML_CHARTEX, SLDNUMFLDID, SLIDE_OBJECT_TYPES, isChartexType } from '../core-enums'
 import {
 	AnimationConfig,
 	AnimationType,
 	GuideProps,
 	IPresentationProps,
+	ISlideRelChart,
 	PresSlide,
 	SectionProps,
 	SlideLayout,
@@ -16,6 +17,7 @@ import {
 	SlideShowProps,
 	TextProps,
 } from '../core-interfaces'
+import { chartColorsPartName, chartStylePartName, wantsChartStyleParts } from '../charts/style'
 import { createTimingXml, MediaPlaybackEntry } from '../gen-animations'
 import { genXmlTransition } from '../gen-transition'
 import { AUTHOR_PART_CONTENT_TYPE, AUTHOR_REL_TYPE, COMMENT_PART_CONTENT_TYPE, COMMENT_REL_URI, P188_NS } from '../gen-comments'
@@ -30,6 +32,21 @@ import {
 	REVISION_INFO_CONTENT_TYPE,
 	REVISION_INFO_REL_TYPE,
 } from '../gen-revision'
+
+/**
+ * Content-type overrides a chart needs: the chart itself plus, when requested, its style and colour-style parts.
+ * - one helper because charts appear on slides, layouts and the master, and a part with no declared
+ *   content type is a repair-dialog cause
+ */
+function chartContentTypes (rel: ISlideRelChart): string {
+	const partContentType = isChartexType(rel.opts._type) ? OOXML_CHARTEX.partContentType : 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
+	let xml = `<Override PartName="${rel.Target}" ContentType="${partContentType}"/>`
+	if (wantsChartStyleParts(rel.opts)) {
+		xml += `<Override PartName="/${chartColorsPartName(rel.globalId)}" ContentType="${CHART_STYLE.colorsContentType}"/>`
+		xml += `<Override PartName="/${chartStylePartName(rel.globalId)}" ContentType="${CHART_STYLE.styleContentType}"/>`
+	}
+	return xml
+}
 
 /** Opt-in MS-PPTX presentation parts (zero-or-one each). */
 export type PresentationTrackingParts = {
@@ -138,7 +155,7 @@ export function makeXmlContTypes (slides: PresSlide[], slideLayouts: SlideLayout
 		strXml += `<Override PartName="/ppt/slides/slide${idx + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`
 		// Add charts if any
 		slide._relsChart.forEach(rel => {
-			strXml += `<Override PartName="${rel.Target}" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`
+			strXml += chartContentTypes(rel)
 		})
 	})
 
@@ -153,7 +170,7 @@ export function makeXmlContTypes (slides: PresSlide[], slideLayouts: SlideLayout
 	slideLayouts.forEach((layout, idx) => {
 		strXml += `<Override PartName="/ppt/slideLayouts/slideLayout${idx + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>`
 		; (layout._relsChart || []).forEach(rel => {
-			strXml += ' <Override PartName="' + rel.Target + '" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
+			strXml += chartContentTypes(rel)
 		})
 	})
 
@@ -187,7 +204,7 @@ export function makeXmlContTypes (slides: PresSlide[], slideLayouts: SlideLayout
 
 	// STEP 6: Add rels
 	; (masterSlide?._relsChart ?? []).forEach(rel => {
-		strXml += ' <Override PartName="' + rel.Target + '" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
+		strXml += chartContentTypes(rel)
 	})
 	; (masterSlide?._relsMedia ?? []).forEach(rel => {
 		if (rel.type !== 'image' && rel.type !== 'online' && rel.type !== 'chart' && rel.extn !== 'm4v' && !strXml.includes(rel.type)) { strXml += ' <Default Extension="' + rel.extn + '" ContentType="' + rel.type + '"/>' }
