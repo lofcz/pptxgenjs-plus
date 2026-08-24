@@ -4,6 +4,7 @@
 
 import {
 	ANCHOR,
+	DEF_CELL_BORDER,
 	DEF_CELL_MARGIN_IN,
 	DEF_PRES_LAYOUT_NAME,
 	DEF_TEXT_SHADOW,
@@ -16,7 +17,9 @@ import {
 	isChartexType,
 } from '../core-enums'
 import {
+	AudioCdTimeProps,
 	BlurProps,
+	BorderProps,
 	Coord,
 	IChartOptsLib,
 	ISlideObject,
@@ -56,7 +59,8 @@ function nvPrModIdExt (modId?: number): string {
 }
 
 function genXmlNvPr (options?: ObjectOptions, phXml = '', extraExts: string[] = []): string {
-	return `<p:nvPr>${phXml}${genXmlNvPrExtLst(options, extraExts)}</p:nvPr>`
+	const attrs = (options?.isPhoto === true ? ' isPhoto="1"' : '') + (options?.userDrawn === true ? ' userDrawn="1"' : '')
+	return `<p:nvPr${attrs}>${phXml}${genXmlNvPrExtLst(options, extraExts)}</p:nvPr>`
 }
 
 /**
@@ -156,11 +160,6 @@ function genXmlTblPr (opts: TableProps): string {
 }
 
 /**
- * Create the `a:ln` outline block for a shape/image
- * @param {ShapeLineProps} line - line options
- * @return {string} XML
- */
-/**
  * Builds `<p14:trim>` / `<p14:fade>` / `<p14:bmkLst>` children of `<p14:media>` (MS-PPTX §2.3.3.14).
  * Times are ST_UniversalTimeOffset (ms).
  */
@@ -175,7 +174,46 @@ function genXmlMediaExtras (opts: ObjectOptions): string {
 	return xml
 }
 
-function genXmlLine (line: ShapeLineProps): string {
+/**
+ * One `a:tcPr` border line (`a:lnL`, `a:lnTlToBr`, ...)
+ * - the four edges and the two diagonals share CT_LineProperties, so they share this emitter
+ * @param {string} name - element name without the `a:` prefix
+ * @param {BorderProps} border - border definition
+ * @returns {string} XML
+ */
+function genXmlCellBorder (name: string, border: BorderProps): string {
+	if (border.type === 'none') return `<a:${name} w="0" cap="flat" cmpd="sng" algn="ctr"><a:noFill/></a:${name}>`
+
+	const width = border.width ?? border.pt ?? DEF_CELL_BORDER.pt
+	const borderTransparency = border.transparency
+	const borderAlpha = typeof borderTransparency === 'number'
+		? `<a:alpha val="${Math.round((100 - Math.min(100, Math.max(0, borderTransparency))) * 1000)}"/>`
+		: ''
+	return (
+		`<a:${name} w="${valToPts(width)}" cap="flat" cmpd="sng" algn="ctr">` +
+		`<a:solidFill>${createColorElement(border.color ?? DEF_CELL_BORDER.color, borderAlpha)}</a:solidFill>` +
+		`<a:prstDash val="${border.type === 'dash' ? 'sysDash' : 'solid'}"/><a:round/>` +
+		'<a:headEnd type="none" w="med" len="med"/><a:tailEnd type="none" w="med" len="med"/>' +
+		`</a:${name}>`
+	)
+}
+
+/**
+ * One `a:audioCd` endpoint (`a:st` or `a:end`).
+ * - `@track` is required and is an `xsd:unsignedByte`, so it is clamped; `@time` defaults to 0
+ */
+function genXmlAudioCdTime (tag: string, point?: AudioCdTimeProps): string {
+	const track = Math.min(255, Math.max(0, Math.round(point?.track ?? 0)))
+	const time = typeof point?.time === 'number' && isFinite(point.time) && point.time > 0 ? ` time="${Math.round(point.time)}"` : ''
+	return `<${tag} track="${track}"${time}/>`
+}
+
+/**
+ * Create the `a:ln` outline block for a shape/image
+ * @param {ShapeLineProps} line - line options
+ * @return {string} XML
+ */
+export function genXmlLine (line: ShapeLineProps): string {
 	// ECMA-376 §5.1.2.1.34: `<a:ln>` carries `w` and `cap` attributes (cap = line ending style, issue #782)
 	const attrs = (line.width ? ` w="${valToPts(line.width)}"` : '') + (line.cap && ['flat', 'sq', 'rnd'].includes(line.cap) ? ` cap="${line.cap}"` : '')
 	let xml = `<a:ln${attrs}>`
@@ -798,10 +836,11 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 									cellMargin[2]
 								)}"`
 
-							// FUTURE: Cell NOWRAP property (textwrap: add to a:tcPr (horzOverflow="overflow" or whatever options exist)
+							const cellOverflow = cellOpts.horzOverflow === 'overflow' || cellOpts.horzOverflow === 'clip' ? ` horzOverflow="${cellOpts.horzOverflow}"` : ''
+							const cellAnchorCtr = cellOpts.anchorCtr === true ? ' anchorCtr="1"' : ''
 
 							// 4: Set CELL content and properties ==================================
-							strXml += `<a:tc${cellSpanAttrStr}>${genXmlTextBody(cell)}<a:tcPr${cellMarginXml}${cellValign}${cellTextDir}>`
+							strXml += `<a:tc${cellSpanAttrStr}>${genXmlTextBody(cell)}<a:tcPr${cellMarginXml}${cellValign}${cellTextDir}${cellAnchorCtr}${cellOverflow}>`
 							// strXml += `<a:tc${cellColspan}${cellRowspan}>${genXmlTextBody(cell)}<a:tcPr${cellMarginXml}${cellValign}${cellTextDir}>`
 							// FIXME: 20200525: ^^^
 							// <a:tcPr marL="38100" marR="38100" marT="38100" marB="38100" vert="vert270">
@@ -815,21 +854,27 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 									{ idx: 1, name: 'lnR' },
 									{ idx: 0, name: 'lnT' },
 									{ idx: 2, name: 'lnB' },
-								].forEach(obj => {
-									if (border[obj.idx].type !== 'none') {
-										const borderTransparency = border[obj.idx].transparency
-										const borderAlpha = typeof borderTransparency === 'number'
-											? `<a:alpha val="${Math.round((100 - Math.min(100, Math.max(0, borderTransparency))) * 1000)}"/>`
-											: ''
-										strXml += `<a:${obj.name} w="${valToPts(border[obj.idx].pt)}" cap="flat" cmpd="sng" algn="ctr">`
-										strXml += `<a:solidFill>${createColorElement(border[obj.idx].color, borderAlpha)}</a:solidFill>`
-										strXml += `<a:prstDash val="${border[obj.idx].type === 'dash' ? 'sysDash' : 'solid'
-										}"/><a:round/><a:headEnd type="none" w="med" len="med"/><a:tailEnd type="none" w="med" len="med"/>`
-										strXml += `</a:${obj.name}>`
-									} else {
-										strXml += `<a:${obj.name} w="0" cap="flat" cmpd="sng" algn="ctr"><a:noFill/></a:${obj.name}>`
-									}
-								})
+								].forEach(obj => { strXml += genXmlCellBorder(obj.name, border[obj.idx]) })
+							}
+
+							// 5b: Diagonals follow the four edges in the CT_TableCellProperties sequence, and are
+							// written only when asked for - unlike the edges, which are always emitted as a set
+							if (cellOpts.borderDiagonalDown) strXml += genXmlCellBorder('lnTlToBr', cellOpts.borderDiagonalDown)
+							if (cellOpts.borderDiagonalUp) strXml += genXmlCellBorder('lnBlToTr', cellOpts.borderDiagonalUp)
+
+							// 5c: `a:cell3D` follows the diagonals and precedes the fill
+							if (cellOpts.cell3D) {
+								const cell3D = cellOpts.cell3D
+								const bevel = cell3D.bevel ?? {}
+								let bevelAttrs = ''
+								if (typeof bevel.width === 'number' && isFinite(bevel.width) && bevel.width >= 0) bevelAttrs += ` w="${inch2Emu(bevel.width)}"`
+								if (typeof bevel.height === 'number' && isFinite(bevel.height) && bevel.height >= 0) bevelAttrs += ` h="${inch2Emu(bevel.height)}"`
+								if (bevel.preset) bevelAttrs += ` prst="${bevel.preset}"`
+								// `rig` and `dir` are both required on CT_LightRig, so a partial rig is dropped rather
+								// than emitted as an element PowerPoint would refuse to open
+								const lightRig = cell3D.lightRig?.rig && cell3D.lightRig.dir ? `<a:lightRig rig="${cell3D.lightRig.rig}" dir="${cell3D.lightRig.dir}"/>` : ''
+								// `a:bevel` is required by the schema, so it is always written
+								strXml += `<a:cell3D${cell3D.material ? ` prstMaterial="${cell3D.material}"` : ''}><a:bevel${bevelAttrs}/>${lightRig}</a:cell3D>`
 							}
 
 							// 6: Close cell Properties & Cell
@@ -1054,13 +1099,36 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					break
 
 				case SLIDE_OBJECT_TYPES.media:
-					if (slideItemObj.mtype === 'online') {
+					if (slideItemObj.mtype === 'audioCd' || slideItemObj.mtype === 'wav') {
+						// EG_Media is a choice, so these carry exactly one media element and no `p14:media`:
+						// `a:audioCd` references the listener's drive and `a:wavAudioFile` is the legacy
+						// embedded-WAV element, so neither has an embedded media part to point at
+						const coverRid = slideItemObj._coverRid ?? 2
+						strSlideXml += '<p:pic>'
+						strSlideXml += ' <p:nvPicPr>'
+						strSlideXml += `<p:cNvPr id="${coverRid}" name="${slideItemObj.options.objectName}"><a:hlinkClick r:id="" action="ppaction://media"/></p:cNvPr>`
+						strSlideXml += ' <p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>'
+						if (slideItemObj.mtype === 'audioCd') {
+							const cd = slideItemObj.options.audioCd
+							strSlideXml += genXmlNvPr(slideItemObj.options, `<a:audioCd>${genXmlAudioCdTime('a:st', cd?.start)}${genXmlAudioCdTime('a:end', cd?.end)}</a:audioCd>`)
+						} else {
+							strSlideXml += genXmlNvPr(slideItemObj.options, `<a:wavAudioFile r:embed="rId${slideItemObj.mediaRid}"${slideItemObj.options.objectName ? ` name="${slideItemObj.options.objectName}"` : ''}/>`)
+						}
+						strSlideXml += ' </p:nvPicPr>'
+						strSlideXml += ` <p:blipFill><a:blip r:embed="rId${coverRid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>`
+						strSlideXml += ' <p:spPr>'
+						strSlideXml += `  <a:xfrm${locationAttr}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`
+						strSlideXml += '  <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+						strSlideXml += ' </p:spPr>'
+						strSlideXml += '</p:pic>'
+					} else if (slideItemObj.mtype === 'online') {
+						const contentType = slideItemObj.options.contentType ? ` contentType="${encodeXmlEntities(slideItemObj.options.contentType)}"` : ''
 						strSlideXml += '<p:pic>'
 						strSlideXml += ' <p:nvPicPr>'
 						// IMPORTANT: <p:cNvPr id="" value is critical - if its not the same number as preview image `rId`, PowerPoint throws error!
 						strSlideXml += `<p:cNvPr id="${(slideItemObj.mediaRid ?? 0) + 2}" name="${slideItemObj.options.objectName}"/>`
 						strSlideXml += ' <p:cNvPicPr/>'
-						strSlideXml += genXmlNvPr(slideItemObj.options, `<a:videoFile r:link="rId${slideItemObj.mediaRid}"/>`)
+						strSlideXml += genXmlNvPr(slideItemObj.options, `<a:videoFile r:link="rId${slideItemObj.mediaRid}"${contentType}/>`)
 						strSlideXml += ' </p:nvPicPr>'
 						// NOTE: `blip` is diferent than videos; also there's no preview "p:extLst" above but exists in videos
 						strSlideXml += ` <p:blipFill><a:blip r:embed="rId${(slideItemObj.mediaRid ?? 0) + 1}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` // NOTE: Preview image is required!
@@ -1072,6 +1140,7 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					} else {
 					// ECMA-376: audio uses `<a:audioFile>`, video uses `<a:videoFile>` under nvPr.
 						const mediaFileTag = slideItemObj.mtype === 'audio' ? 'a:audioFile' : 'a:videoFile'
+						const contentType = slideItemObj.options.contentType ? ` contentType="${encodeXmlEntities(slideItemObj.options.contentType)}"` : ''
 						strSlideXml += '<p:pic>'
 						strSlideXml += ' <p:nvPicPr>'
 						// IMPORTANT: <p:cNvPr id="" value is critical - if not the same number as preiew image rId, PowerPoint throws error!
@@ -1090,7 +1159,7 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 							: ''
 						strSlideXml += genXmlNvPr(
 							slideItemObj.options,
-							`<${mediaFileTag} r:link="rId${slideItemObj.mediaRid}"/>`,
+							`<${mediaFileTag} r:link="rId${slideItemObj.mediaRid}"${contentType}/>`,
 							narrationExt ? [mediaExt, narrationExt] : [mediaExt]
 						)
 						strSlideXml += ' </p:nvPicPr>'

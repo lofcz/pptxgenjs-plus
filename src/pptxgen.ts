@@ -100,6 +100,7 @@ import {
 	SlideMasterProps,
 	SlideShowProps,
 	SlideNumberProps,
+	TableStyleProps,
 	TableToSlidesProps,
 	ThemeProps,
 	WriteBaseProps,
@@ -276,6 +277,16 @@ export default class PptxGenJS implements IPresentationProps {
 
 	public get rtlMode(): boolean {
 		return this._rtlMode
+	}
+
+	/** tableStyles - custom table style definitions written into `ppt/tableStyles.xml` */
+	private _tableStyles?: TableStyleProps[]
+	public set tableStyles(value: TableStyleProps[] | undefined) {
+		this._tableStyles = value
+	}
+
+	public get tableStyles(): TableStyleProps[] | undefined {
+		return this._tableStyles
 	}
 
 	/**
@@ -618,7 +629,7 @@ export default class PptxGenJS implements IPresentationProps {
 	private readonly createChartMediaRels = (slide: PresSlide | SlideLayout, zip: JSZip, chartPromises: Promise<string>[], mediaPaths: Set<string>): void => {
 		slide._relsChart.forEach(rel => chartPromises.push(genCharts.createExcelWorksheet(rel, zip)))
 		slide._relsMedia.forEach(rel => {
-			if (rel.type !== 'online' && rel.type !== 'hyperlink') {
+			if (!rel.isLinked && rel.type !== 'online' && rel.type !== 'hyperlink') {
 				// A: Loop vars
 				let data: string = rel.data && typeof rel.data === 'string' ? rel.data : ''
 
@@ -728,7 +739,7 @@ export default class PptxGenJS implements IPresentationProps {
 			zip.file('ppt/theme/theme2.xml', genXml.makeXmlTheme(this, 'notes'))
 			zip.file('ppt/presentation.xml', genXml.makeXmlPresentation(this))
 			zip.file('ppt/presProps.xml', genXml.makeXmlPresProps(this))
-			zip.file('ppt/tableStyles.xml', genXml.makeXmlTableStyles())
+			zip.file('ppt/tableStyles.xml', genXml.makeXmlTableStyles(this._tableStyles))
 			zip.file('ppt/viewProps.xml', genXml.makeXmlViewProps())
 
 			// C: Create a Layout/Master/Rel/Slide file for each SlideLayout and Slide

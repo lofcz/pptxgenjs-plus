@@ -1084,7 +1084,29 @@ export interface ThemeProps {
 }
 
 // image / media ==================================================================================
-export type MediaType = 'audio' | 'online' | 'video'
+export type MediaType = 'audio' | 'online' | 'video' | 'audioCd' | 'wav'
+
+/**
+ * A point on an audio CD (`a:st`/`a:end`, ECMA-376 Part 1 §20.1.3.4 CT_AudioCDTime)
+ */
+export interface AudioCdTimeProps {
+	/** CD track number (0-255) - required by the schema */
+	track: number
+	/**
+	 * Offset into the track, in seconds
+	 * @default 0
+	 */
+	time?: number
+}
+
+/**
+ * CD audio source (`a:audioCd`, ECMA-376 Part 1 §20.1.3.3 CT_AudioCD)
+ * - references the listener's CD drive, so it embeds nothing and needs no relationship
+ */
+export interface AudioCdProps {
+	start: AudioCdTimeProps
+	end: AudioCdTimeProps
+}
 
 export interface ImageProps extends PositionProps, DataOrPathProps, ObjectNameProps, AppearOnClickProps, NvPrExtensionProps {
 	/**
@@ -1320,6 +1342,26 @@ export interface MediaProps extends PositionProps, DataOrPathProps, ObjectNamePr
 	 * @default false
 	 */
 	mute?: boolean
+	/**
+	 * MIME type of the referenced media (`a:audioFile@contentType`, `a:videoFile@contentType`)
+	 * @example 'video/mp4'
+	 */
+	contentType?: string
+	/**
+	 * CD audio track range - required when `type` is `audioCd`
+	 * @example { start: { track: 1 }, end: { track: 1, time: 30 } }
+	 */
+	audioCd?: AudioCdProps
+	/**
+	 * Mark the media frame as a photo (`p:nvPr@isPhoto`)
+	 * @default false
+	 */
+	isPhoto?: boolean
+	/**
+	 * Mark the media frame as author-placed rather than layout furniture (`p:nvPr@userDrawn`)
+	 * @default false
+	 */
+	userDrawn?: boolean
 }
 
 // groups =========================================================================================
@@ -1582,6 +1624,55 @@ export interface TableToSlidesProps extends TableProps {
 	 */
 	newSlideStartY?: number
 }
+/**
+ * 3-D bevel applied to a table cell (`a:bevel`, ECMA-376 Part 1 §20.1.5.3 CT_Bevel)
+ */
+export interface CellBevelProps {
+	/**
+	 * Bevel shape
+	 * @default circle
+	 */
+	preset?: 'relaxedInset' | 'circle' | 'slope' | 'cross' | 'angle' | 'softRound' | 'convex' | 'coolSlant' | 'divot' | 'riblet' | 'hardEdge' | 'artDeco'
+	/**
+	 * Bevel width (inches)
+	 * @default 0.083
+	 */
+	width?: number
+	/**
+	 * Bevel height (inches)
+	 * @default 0.083
+	 */
+	height?: number
+}
+
+/**
+ * Light rig for a 3-D table cell (`a:lightRig`, ECMA-376 Part 1 §20.1.5.5 CT_LightRig)
+ * - both properties are required by the schema, so a partial value is not emitted
+ */
+export interface CellLightRigProps {
+	rig: 'legacyFlat1' | 'legacyFlat2' | 'legacyFlat3' | 'legacyFlat4' | 'legacyNormal1' | 'legacyNormal2' | 'legacyNormal3' | 'legacyNormal4' | 'legacyHarsh1' | 'legacyHarsh2' | 'legacyHarsh3' | 'legacyHarsh4' | 'threePt' | 'balanced' | 'soft' | 'harsh' | 'flood' | 'contrasting' | 'morning' | 'sunrise' | 'sunset' | 'chilly' | 'freezing' | 'flat' | 'twoPt' | 'glow' | 'brightRoom'
+	dir: 'tl' | 't' | 'tr' | 'l' | 'r' | 'bl' | 'b' | 'br'
+}
+
+/**
+ * 3-D properties of a table cell (`a:cell3D`, ECMA-376 Part 1 §21.1.3.1 CT_Cell3D)
+ */
+export interface Cell3DProps {
+	/**
+	 * Cell bevel
+	 * - `a:bevel` is required by the schema, so an `a:bevel` with schema defaults is written
+	 *   whenever `cell3D` is set
+	 */
+	bevel?: CellBevelProps
+	/**
+	 * Surface material
+	 * @default plastic
+	 */
+	material?: 'legacyMatte' | 'legacyPlastic' | 'legacyMetal' | 'legacyWireframe' | 'matte' | 'plastic' | 'metal' | 'warmMatte' | 'translucentPowder' | 'powder' | 'dkEdge' | 'softEdge' | 'clear' | 'flat' | 'softmetal'
+	/** Light rig - dropped unless both `rig` and `dir` are set */
+	lightRig?: CellLightRigProps
+}
+
 export interface TableCellProps extends TextBaseProps {
 	/**
 	 * Auto-paging character weight
@@ -1602,13 +1693,38 @@ export interface TableCellProps extends TextBaseProps {
 	 */
 	autoPageLineWeight?: number
 	/**
+	 * Whether text is centered both horizontally and vertically in the cell
+	 * @default false
+	 */
+	anchorCtr?: boolean
+	/**
 	 * Cell border
 	 */
 	border?: BorderProps | [BorderProps, BorderProps, BorderProps, BorderProps]
 	/**
+	 * Diagonal border running bottom-left to top-right (`a:lnBlToTr`)
+	 * - independent of `border`, which only covers the four edges
+	 */
+	borderDiagonalUp?: BorderProps
+	/**
+	 * Diagonal border running top-left to bottom-right (`a:lnTlToBr`)
+	 * - independent of `border`, which only covers the four edges
+	 */
+	borderDiagonalDown?: BorderProps
+	/**
+	 * 3-D bevel and lighting for the cell
+	 * @example { bevel: { preset: 'circle', width: 0.05, height: 0.05 }, material: 'metal' }
+	 */
+	cell3D?: Cell3DProps
+	/**
 	 * Cell colspan
 	 */
 	colspan?: number
+	/**
+	 * Whether text wider than the cell is clipped or allowed to overflow it
+	 * @default clip
+	 */
+	horzOverflow?: 'clip' | 'overflow'
 	/**
 	 * Fill color
 	 * @example { color:'FF0000' } // hex color (red)
@@ -1750,7 +1866,7 @@ export interface TableProps extends PositionProps, TextBaseProps, ObjectNameProp
 	 */
 	rtlMode?: boolean
 	/**
-	 * Table style id (GUID of a built-in PowerPoint table style)
+	 * Table style id (GUID of a built-in PowerPoint table style, or a custom style from `pptx.tableStyles`)
 	 * - required for `bandRow`/`firstRow`/etc. to have a visible effect
 	 * @example '{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}' // "Medium Style 2 - Accent 1"
 	 */
@@ -1772,6 +1888,72 @@ export interface TableProps extends PositionProps, TextBaseProps, ObjectNameProp
 	 */
 	newSlideStartY?: number
 }
+
+/**
+ * Borders of one part of a table style (`a:tcBdr`, ECMA-376 Part 1 §21.1.3.11)
+ */
+export interface TableStyleBorderProps {
+	left?: ShapeLineProps
+	right?: ShapeLineProps
+	top?: ShapeLineProps
+	bottom?: ShapeLineProps
+	/** horizontal borders between rows */
+	insideH?: ShapeLineProps
+	/** vertical borders between columns */
+	insideV?: ShapeLineProps
+}
+
+/**
+ * How one part of a table looks in a table style (`a:wholeTbl`, `a:band1H`, `a:firstRow`, ...)
+ * - `a:tcTxStyle` carries the text half, `a:tcStyle` the cell half
+ */
+export interface TableStylePartProps {
+	/** bold text - omitted leaves it to the theme */
+	bold?: boolean
+	/** italic text - omitted leaves it to the theme */
+	italic?: boolean
+	/** text colour */
+	color?: Color
+	/** cell fill */
+	fill?: ShapeFillProps
+	/** cell borders */
+	borders?: TableStyleBorderProps
+}
+
+/**
+ * A custom table style, written into `ppt/tableStyles.xml` (ECMA-376 Part 1 §14.2.9)
+ * - reference it from a table with `tableStyleId: '<the same id>'`
+ * - `id` and `name` are both required by the schema
+ */
+export interface TableStyleProps {
+	/** Style GUID, braced and upper-case, e.g. `{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}` */
+	id: string
+	/** Name shown in PowerPoint's table-style gallery */
+	name: string
+	/** applies to every cell */
+	wholeTable?: TableStylePartProps
+	/** first banded row */
+	band1H?: TableStylePartProps
+	/** second banded row */
+	band2H?: TableStylePartProps
+	/** first banded column */
+	band1V?: TableStylePartProps
+	/** second banded column */
+	band2V?: TableStylePartProps
+	firstRow?: TableStylePartProps
+	lastRow?: TableStylePartProps
+	firstCol?: TableStylePartProps
+	lastCol?: TableStylePartProps
+	/** top-left cell */
+	nwCell?: TableStylePartProps
+	/** top-right cell */
+	neCell?: TableStylePartProps
+	/** bottom-left cell */
+	swCell?: TableStylePartProps
+	/** bottom-right cell */
+	seCell?: TableStylePartProps
+}
+
 export interface TableCell {
 	/** @internal assigned by the table builder; consumers pass plain `{ text, options }` objects */
 	_type?: SLIDE_OBJECT_TYPES.tablecell
@@ -2733,6 +2915,12 @@ export interface ISlideRelMedia {
 	data?: string | ArrayBuffer
 	/** used to indicate that a media file has already been read/enocded (PERF) */
 	isDuplicate?: boolean
+	/**
+	 * Media referenced rather than embedded: the relationship is written `TargetMode="External"`
+	 * and no part is added to the package
+	 * @internal
+	 */
+	isLinked?: boolean
 	isSvgPng?: boolean
 	/** SVG path recolor (Martin-N) — applied when encoding SVG media */
 	fill?: ShapeFillProps
@@ -2757,6 +2945,12 @@ export interface ISlideObject {
 	media?: string
 	mtype?: MediaType
 	mediaRid?: number
+	/**
+	 * rId of the media frame's preview image - the media source kinds push different numbers of
+	 * relationships, so the cover cannot be derived from `mediaRid`
+	 * @internal
+	 */
+	_coverRid?: number
 	shape?: SHAPE_NAME
 	/** @internal group children (`p:grpSp`) */
 	_objects?: ISlideObject[]
@@ -2962,6 +3156,16 @@ export interface ObjectOptions extends ImageProps, PositionProps, ShapeProps, Ta
 	loop?: boolean
 	fullScreen?: boolean
 	mute?: boolean
+	/** MIME type of referenced media (`a:audioFile@contentType`) @internal */
+	contentType?: string
+	/** CD audio track range (`a:audioCd`) @internal */
+	audioCd?: AudioCdProps
+	/** media frame marked as a photo (`p:nvPr@isPhoto`) @internal */
+	isPhoto?: boolean
+	/** author-placed rather than layout furniture (`p:nvPr@userDrawn`) @internal */
+	userDrawn?: boolean
+	/** media referenced rather than embedded @internal */
+	isLinked?: boolean
 	// MS-PPTX §2.8 CT_ZoomObjectProperties (zoom objects only)
 	returnToParent?: boolean
 	showBg?: boolean
@@ -3360,6 +3564,11 @@ export interface PresentationProps {
 	 * @default false
 	 */
 	rtlMode: boolean
+	/**
+	 * Custom table style definitions written into `ppt/tableStyles.xml`
+	 * - reference one from a table with `tableStyleId`
+	 */
+	tableStyles?: TableStyleProps[]
 	/**
 	 * Starting slide number written to `ppt/presentation.xml` (`firstSlideNum`)
 	 * - PowerPoint: Design > Slide Size > Custom Slide Size > Number slides from
