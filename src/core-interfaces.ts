@@ -335,6 +335,26 @@ export interface BorderProps {
 	pt?: number
 }
 // used by: image, object, text,
+export interface HyperlinkSoundProps {
+	/**
+	 * WAV audio data (base64), with a mime header
+	 * - one of `data` or `path` is required
+	 * @example 'audio/wav;base64,UklGRi...'
+	 */
+	data?: string
+	/**
+	 * WAV file path or URL
+	 * - one of `data` or `path` is required
+	 */
+	path?: string
+	/**
+	 * Sound name PowerPoint shows in the Action dialog
+	 * @default 'sound.wav'
+	 */
+	name?: string
+	/** relationship id resolved when the object is created @internal */
+	_sndRId?: number
+}
 export interface HyperlinkProps {
 	/**
 	 * Relationship id - set by the library during export
@@ -353,6 +373,21 @@ export interface HyperlinkProps {
 	 * Hyperlink Tooltip
 	 */
 	tooltip?: string
+	/**
+	 * Highlight the link when clicked
+	 * @default false
+	 */
+	highlightClick?: boolean
+	/**
+	 * Stop any playing sounds when the link is clicked
+	 * @default false
+	 */
+	stopSoundsOnClick?: boolean
+	/**
+	 * Sound played when the link is triggered (`a:snd`)
+	 * - must be WAV data; ECMA-376 20.1.2.2.32 allows no other format here
+	 */
+	sound?: HyperlinkSoundProps
 }
 /**
  * Soft-edge effect (`a:softEdge`) — blur the shape outline.
@@ -787,6 +822,28 @@ export interface TextBaseProps {
 		 */
 		color?: Color
 		/**
+		 * Bullet size as a percent of the text size (`a:buSzPct`)
+		 * - range: 25-400
+		 * @default 100
+		 */
+		size?: number
+		/**
+		 * Bullet size in points (`a:buSzPts`), instead of a percent
+		 */
+		sizePts?: number
+		/**
+		 * Typeface for the bullet glyph (`a:buFont`)
+		 * - needed for Wingdings-style character bullets
+		 */
+		fontFace?: string
+		/**
+		 * Picture bullet (`a:buBlip`) - base64 image data with a mime header
+		 * - takes precedence over a character or number bullet
+		 */
+		image?: string
+		/** relationship id of the picture bullet, resolved when the object is created @internal */
+		_imageRId?: number
+		/**
 		 * Indentation (space between bullet and text) (points)
 		 * @since v3.3.0
 		 * @default 27 // DEF_BULLET_MARGIN
@@ -1126,6 +1183,12 @@ export interface ImageProps extends PositionProps, DataOrPathProps, ObjectNamePr
 	flipV?: boolean
 	hyperlink?: HyperlinkProps
 	/**
+	 * Mouse-over action, configured like `hyperlink` but triggered on hover
+	 * - PowerPoint's Insert > Action > Mouse Over tab
+	 * @example { hyperlinkHover: { slide: 3, tooltip: 'Jump to results' } }
+	 */
+	hyperlinkHover?: HyperlinkProps
+	/**
 	 * Image outline/border (a picture frame)
 	 * @example { color: '696969', width: 2 } // 2pt dim-gray border
 	 */
@@ -1442,6 +1505,12 @@ export interface ShapeProps extends PositionProps, ObjectNameProps, AppearOnClic
 	 */
 	hyperlink?: HyperlinkProps
 	/**
+	 * Mouse-over action, configured like `hyperlink` but triggered on hover
+	 * - PowerPoint's Insert > Action > Mouse Over tab
+	 * @example { hyperlinkHover: { slide: 3, tooltip: 'Jump to results' } }
+	 */
+	hyperlinkHover?: HyperlinkProps
+	/**
 	 * Line options
 	 */
 	line?: ShapeLineProps
@@ -1736,6 +1805,12 @@ export interface TableCellProps extends TextBaseProps {
 	_fillRid?: number
 	hyperlink?: HyperlinkProps
 	/**
+	 * Mouse-over action, configured like `hyperlink` but triggered on hover
+	 * - PowerPoint's Insert > Action > Mouse Over tab
+	 * @example { hyperlinkHover: { slide: 3, tooltip: 'Jump to results' } }
+	 */
+	hyperlinkHover?: HyperlinkProps
+	/**
 	 * Cell margin (inches)
 	 * @default 0
 	 */
@@ -1995,6 +2070,15 @@ export interface TextGlowProps {
 	size: number
 }
 
+/**
+ * Refreshable text-run field type (`a:fld@type`, ECMA-376 21.1.2.2.4)
+ */
+export type TextFieldType =
+	| 'slidenum' | 'datetime' | 'datetimeFigureOut'
+	| 'datetime1' | 'datetime2' | 'datetime3' | 'datetime4' | 'datetime5' | 'datetime6' | 'datetime7'
+	| 'datetime8' | 'datetime9' | 'datetime10' | 'datetime11' | 'datetime12' | 'datetime13'
+	| 'headerfooter' | 'hdr' | 'ftr'
+
 export interface TextPropsOptions extends PositionProps, DataOrPathProps, TextBaseProps, ObjectNameProps, AppearOnClickProps, NvPrExtensionProps {
 	_bodyProp?: {
 		// Note: Many of these duplicated as user options are transformed to _bodyProp options for XML processing
@@ -2075,6 +2159,12 @@ export interface TextPropsOptions extends PositionProps, DataOrPathProps, TextBa
 	flipV?: boolean
 	glow?: TextGlowProps
 	hyperlink?: HyperlinkProps
+	/**
+	 * Mouse-over action, configured like `hyperlink` but triggered on hover
+	 * - PowerPoint's Insert > Action > Mouse Over tab
+	 * @example { hyperlinkHover: { slide: 3, tooltip: 'Jump to results' } }
+	 */
+	hyperlinkHover?: HyperlinkProps
 	indentLevel?: number
 	isTextBox?: boolean
 	line?: ShapeLineProps
@@ -2133,6 +2223,22 @@ export interface TextPropsOptions extends PositionProps, DataOrPathProps, TextBa
 	 * @default false
 	 */
 	rtlMode?: boolean
+	/**
+	 * Lay columns out right-to-left (`a:bodyPr@rtlCol`)
+	 * - defaults to this text box's `rtlMode` when unset
+	 */
+	rtlColumns?: boolean
+	/**
+	 * Render this run as a field the consumer refreshes, rather than literal text (`a:fld`)
+	 * - the run's `text` becomes the cached value, so consumers that do not refresh still show something
+	 * @example { text: '22/08/2026', options: { field: 'datetime1' } }
+	 */
+	field?: TextFieldType
+	/**
+	 * Horizontal-in-vertical numerals for East Asian vertical text (`a:rPr@kumimoji`)
+	 * @default false
+	 */
+	kumimoji?: boolean
 	shadow?: ShadowProps
 	/**
 	 * Soft-edge effect (`a:softEdge` on the text shape)
@@ -2941,6 +3047,11 @@ export interface ISlideObject {
 	image?: string
 	imageRid?: number
 	hyperlink?: HyperlinkProps
+	/**
+	 * Mouse-over action, configured like `hyperlink` but triggered on hover
+	 * - PowerPoint's Insert > Action > Mouse Over tab
+	 */
+	hyperlinkHover?: HyperlinkProps
 	// media
 	media?: string
 	mtype?: MediaType

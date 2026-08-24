@@ -221,6 +221,14 @@ export enum TEXT_VALIGN {
 
 export const SLDNUMFLDID = '{F7021451-1387-4CA6-816F-3879F97B5CBC}'
 
+/** ECMA-376 21.1.2.2.4 — `a:fld@type` values PowerPoint refreshes */
+export const TEXT_FIELD_TYPES = new Set([
+	'slidenum', 'datetime', 'datetimeFigureOut',
+	'datetime1', 'datetime2', 'datetime3', 'datetime4', 'datetime5', 'datetime6', 'datetime7',
+	'datetime8', 'datetime9', 'datetime10', 'datetime11', 'datetime12', 'datetime13',
+	'headerfooter', 'hdr', 'ftr',
+])
+
 // ENUM
 // TODO: 3.5 or v4.0: rationalize ts-def exported enum names/case!
 // NOTE: First tsdef enum named correctly (shapes -> 'Shape', colors -> 'Color'), etc.
