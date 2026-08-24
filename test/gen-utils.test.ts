@@ -98,6 +98,26 @@ test('getSmartParseNumber', () => {
 	assert.equal(getSmartParseNumber('garbage', 'X', LAYOUT), 0)
 })
 
+test('getSmartParseNumber accepts unit-suffixed lengths', () => {
+	assert.equal(getSmartParseNumber('2.54cm', 'X', LAYOUT), 914400, 'cm')
+	assert.equal(getSmartParseNumber('25.4mm', 'Y', LAYOUT), 914400, 'mm')
+	assert.equal(getSmartParseNumber('72pt', 'X', LAYOUT), 914400, 'pt')
+	assert.equal(getSmartParseNumber('1in', 'X', LAYOUT), 914400, 'in')
+	assert.equal(getSmartParseNumber('-1.27cm', 'X', LAYOUT), -457200, 'negative offsets are allowed')
+	assert.equal(getSmartParseNumber('300cm', 'X', LAYOUT), 108000000, 'a stated unit bypasses the inches-vs-EMU heuristic')
+	assert.equal(getSmartParseNumber('5px', 'X', LAYOUT), 0, 'unsupported units are not guessed at')
+	assert.equal(getSmartParseNumber('.5in', 'X', LAYOUT), 457200, 'a leading decimal point')
+	const digits = '0'.repeat(50000)
+	const start = process.hrtime.bigint()
+	assert.equal(getSmartParseNumber(`${digits}x`, 'X', LAYOUT), 0, 'a long non-matching digit string is rejected')
+	assert.ok(Number(process.hrtime.bigint() - start) / 1e6 < 100, 'and rejected in linear time, not by backtracking')
+})
+
+test('inch2Emu accepts unit-suffixed lengths', () => {
+	assert.equal(inch2Emu('2.54cm'), 914400, 'the inch-valued options (colW, rowH, inset, cell margin) share the parse')
+	assert.equal(inch2Emu('300cm'), 108000000, 'no magnitude heuristic when the unit is stated')
+})
+
 test('getUuid', () => {
 	assert.match(getUuid('xxxxxxxx'), /^[0-9a-f]{8}$/)
 	assert.match(getUuid('y'), /^[89ab]$/, 'the "y" nibble is constrained per RFC4122')

@@ -184,13 +184,38 @@ export function resolveDataLabelPosition (position: string, chartType?: string, 
 	return code
 }
 
+/** Units per inch, for the length suffixes accepted on `x`/`y`/`w`/`h` and the other inch-valued options */
+const UNITS_PER_INCH: Record<string, number> = { in: 1, cm: 2.54, mm: 25.4, pt: 72 }
+
+/**
+ * A number with a length suffix - `'2.5cm'`, `'-4mm'`, `'18pt'`, `'5in'`
+ * - the mantissa alternates rather than using `\d*\.?\d+`: that form lets the two digit runs
+ *   split a plain integer many ways, so a long non-matching digit string backtracks quadratically
+ */
+const REGEX_UNIT_LENGTH = /^\s*(-?(?:\d+(?:\.\d+)?|\.\d+))\s*(in|cm|mm|pt)\s*$/i
+
+/**
+ * Parse a unit-suffixed length into inches
+ * - a suffixed value carries its own unit, so it bypasses the inches-vs-EMU magnitude heuristic entirely
+ * @param {string} value - ex: `'2.5cm'`, `'18pt'`
+ * @returns {number|undefined} inches, or `undefined` when `value` is not a suffixed length
+ */
+export function parseUnitLength (value: string): number | undefined {
+	const match = REGEX_UNIT_LENGTH.exec(value)
+	if (!match) return undefined
+	const num = Number(match[1])
+	if (!Number.isFinite(num)) return undefined
+	return num / UNITS_PER_INCH[match[2].toLowerCase()]
+}
+
 /**
  * Translates any type of `x`/`y`/`w`/`h` prop to EMU
  * - guaranteed to return a result regardless of undefined, null, etc. (0)
  * - {number} - 12800 (EMU)
  * - {number} - 0.5 (inches)
  * - {string} - "75%"
- * @param {number|string} size - numeric ("5.5") or percentage ("90%")
+ * - {string} - "2.5cm" (also in/mm/pt)
+ * @param {number|string} size - numeric ("5.5"), unit-suffixed ("2.5cm") or percentage ("90%")
  * @param {'X' | 'Y'} xyDir - direction
  * @param {PresLayout} layout - presentation layout
  * @returns {number} calculated size
@@ -207,7 +232,13 @@ export function getSmartParseNumber (size: Coord | undefined, xyDir: 'X' | 'Y', 
 	// Assume any number whose absolute value is 100+ is EMU already.
 	if (typeof size === 'number' && Math.abs(size) >= 100) return size
 
-	// CASE 3: Percentage (ex: '50%')
+	// CASE 3: Unit-suffixed length (ex: '2.5cm') - unambiguous, so no magnitude heuristic
+	if (typeof size === 'string') {
+		const inches = parseUnitLength(size)
+		if (inches !== undefined) return Math.round(EMU * inches)
+	}
+
+	// CASE 4: Percentage (ex: '50%')
 	if (typeof size === 'string' && size.includes('%')) {
 		if (xyDir && xyDir === 'X') return Math.round((parseFloat(size) / 100) * layout.width)
 		if (xyDir && xyDir === 'Y') return Math.round((parseFloat(size) / 100) * layout.height)
@@ -285,6 +316,11 @@ export function validateXmlFragment (xml: string): string | null {
  * @returns {number} EMU value
  */
 export function inch2Emu (inches: number | string): number {
+	// A unit-suffixed string states its own unit - convert it before any inches assumption
+	if (typeof inches === 'string') {
+		const parsed = parseUnitLength(inches)
+		if (parsed !== undefined) return Math.round(EMU * parsed)
+	}
 	// NOTE: Provide Caller Safety: Numbers may get conv<->conv during flight, so be kind and do some simple checks to ensure inches were passed
 	// Any absolute value over 100 is not inches (negative EMU is off-slide), so return it unchanged
 	if (typeof inches === 'number' && Math.abs(inches) > 100) return inches

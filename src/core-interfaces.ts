@@ -12,11 +12,14 @@ import { CHART_NAME, CHARTEX_NAME, PLACEHOLDER_TYPE, SHAPE_NAME, SLIDE_OBJECT_TY
  * Coordinate number - either:
  * - Inches (0-n)
  * - Percentage (0-100)
+ * - Unit-suffixed length (`in` / `cm` / `mm` / `pt`)
  *
  * @example 10.25 // coordinate in inches
+ * @example '2.5cm' // coordinate with an explicit unit
  * @example '75%' // coordinate as percentage of slide size
  */
-export type Coord = number | `${number}%`
+export type UnitLength = `${number}in` | `${number}cm` | `${number}mm` | `${number}pt`
+export type Coord = number | `${number}%` | UnitLength
 export interface PositionProps {
 	/**
 	 * Horizontal position
@@ -1258,8 +1261,76 @@ export interface PlaceholderProps extends PositionProps, TextBaseProps, NvPrExte
 	 * Placeholder background fill. Kept when a slide inherits layout defaults (caller fill wins).
 	 */
 	fill?: ShapeFillProps
+	/**
+	 * Text direction inside the placeholder (`p:ph@orient`)
+	 * @default horz
+	 */
+	orient?: 'horz' | 'vert'
+	/**
+	 * How much of the layout the placeholder covers (`p:ph@sz`)
+	 * @default full
+	 */
+	sz?: 'full' | 'half' | 'quarter'
+	/**
+	 * Mark the placeholder as drawn by the author rather than inherited layout furniture
+	 * (`p:nvPr@userDrawn`)
+	 * @default false
+	 */
+	userDrawn?: boolean
 }
-export interface ObjectNameProps {
+/**
+ * Editing locks (ECMA-376 20.1.2.2.34 `a:spLocks` and its siblings)
+ * - each is omitted unless set, so the values the library emits today are unchanged
+ */
+export interface ShapeLockProps {
+	/** prevent grouping with other shapes */
+	noGroup?: boolean
+	/** prevent selection */
+	noSelect?: boolean
+	/** prevent rotation */
+	noRotate?: boolean
+	/** prevent changing the aspect ratio */
+	noChangeAspect?: boolean
+	/** prevent moving */
+	noMove?: boolean
+	/** prevent resizing */
+	noResize?: boolean
+	/** prevent editing the geometry points */
+	noEditPoints?: boolean
+	/** prevent dragging the adjust handles */
+	noAdjustHandles?: boolean
+	/** prevent changing arrowheads */
+	noChangeArrowheads?: boolean
+	/** prevent changing the preset geometry */
+	noChangeShapeType?: boolean
+	/** prevent editing the text */
+	noTextEdit?: boolean
+	/** pictures only: prevent cropping */
+	noCrop?: boolean
+	/** pictures only: prefer resizing relative to the original size */
+	preferRelativeResize?: boolean
+}
+/**
+ * Non-visual drawing properties beyond the name (ECMA-376 19.3.1.12 `p:cNvPr`)
+ */
+export interface NonVisualProps {
+	/**
+	 * Alt-text *title*, distinct from the description
+	 * - PowerPoint: right-click > Edit Alt Text
+	 */
+	title?: string
+	/**
+	 * Hide the shape
+	 * - it stays in the file and can be re-shown from the selection pane
+	 * @default false
+	 */
+	hidden?: boolean
+	/**
+	 * Editing locks for this shape
+	 */
+	lock?: ShapeLockProps
+}
+export interface ObjectNameProps extends NonVisualProps {
 	/**
 	 * Object name
 	 * - used instead of default "Object N" name
@@ -3489,11 +3560,83 @@ export interface SlideNumberProps extends PositionProps, TextBaseProps {
 	 */
 	margin?: Margin // TODO: convert to inches in 4.0 (valid values are 0-22)
 }
+/**
+ * ECMA-376 20.1.10.14 ST_ColorSchemeIndex - a slot in the theme's colour scheme
+ */
+export type ColorSchemeIndex = 'dk1' | 'lt1' | 'dk2' | 'lt2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6' | 'hlink' | 'folHlink'
+
+/**
+ * Per-layout colour map override (`p:clrMapOvr` > `a:overrideClrMapping`)
+ * - remaps the presentation's colour slots for one layout
+ * - all twelve attributes are required by the schema, so anything left unset is filled from the
+ *   identity map (which is what inheriting the master's mapping means)
+ */
+export interface ColorMapOverrideProps {
+	bg1?: ColorSchemeIndex
+	tx1?: ColorSchemeIndex
+	bg2?: ColorSchemeIndex
+	tx2?: ColorSchemeIndex
+	accent1?: ColorSchemeIndex
+	accent2?: ColorSchemeIndex
+	accent3?: ColorSchemeIndex
+	accent4?: ColorSchemeIndex
+	accent5?: ColorSchemeIndex
+	accent6?: ColorSchemeIndex
+	hlink?: ColorSchemeIndex
+	folHlink?: ColorSchemeIndex
+}
+
+/**
+ * ECMA-376 19.7.15 ST_SlideLayoutType - the placeholder arrangement a layout describes
+ * - PowerPoint's layout gallery and its Reset Layout command read this
+ */
+export type SlideLayoutType = 'title' | 'tx' | 'twoColTx' | 'tbl' | 'txAndChart' | 'chartAndTx' | 'dgm' | 'chart' | 'txAndClipArt' | 'clipArtAndTx' | 'titleOnly' | 'blank' | 'txAndObj' | 'objAndTx' | 'objOnly' | 'obj' | 'txAndMedia' | 'mediaAndTx' | 'objOverTx' | 'txOverObj' | 'txAndTwoObj' | 'twoObjAndTx' | 'twoObjOverTx' | 'fourObj' | 'vertTx' | 'clipArtAndVertTx' | 'vertTitleAndTx' | 'vertTitleAndTxOverChart' | 'twoObj' | 'objAndTwoObj' | 'twoObjAndObj' | 'cust' | 'secHead' | 'twoTxTwoObj' | 'objTx' | 'picTx'
+
 export interface SlideMasterProps {
 	/**
 	 * Unique name for this master
 	 */
 	title: string
+	/**
+	 * Which placeholder arrangement this layout describes (`p:sldLayout@type`)
+	 * - PowerPoint's New Slide gallery groups layouts by this, and Reset Layout trusts it
+	 * @default cust
+	 */
+	layoutType?: SlideLayoutType
+	/**
+	 * Name shown for the layout in PowerPoint's gallery (`@matchingName`)
+	 * - unset writes nothing; PowerPoint then falls back to the layout name from `title`
+	 */
+	matchingName?: string
+	/**
+	 * Keep the layout in the deck even when no slide uses it (`@preserve`)
+	 * @default true
+	 */
+	preserve?: boolean
+	/**
+	 * Draw the master's shapes behind slides using this layout (`@showMasterSp`)
+	 * @default true
+	 */
+	showMasterShapes?: boolean
+	/**
+	 * Play the master's placeholder animations on slides using this layout (`@showMasterPhAnim`)
+	 * @default true
+	 */
+	showMasterPlaceholderAnimation?: boolean
+	/**
+	 * Mark the layout as drawn by the author rather than generated (`@userDrawn`)
+	 * @default false
+	 */
+	userDrawn?: boolean
+	/**
+	 * Remap the theme's colour slots for this layout only (`p:clrMapOvr`)
+	 * - with none set the layout inherits the master's mapping, which is today's behaviour
+	 */
+	colorMapOverride?: ColorMapOverrideProps
+	/**
+	 * Transition applied to slides using this layout (`p:transition`)
+	 */
+	transition?: SlideTransitionProps
 	background?: BackgroundProps
 	margin?: Margin
 	slideNumber?: SlideNumberProps
@@ -3527,6 +3670,12 @@ export interface SlideMasterProps {
 export interface ObjectOptions extends ImageProps, PositionProps, ShapeProps, TableCellProps, TextPropsOptions {
 	_placeholderIdx?: number
 	_placeholderType?: PLACEHOLDER_TYPE
+	/** placeholder text direction (`p:ph@orient`) */
+	orient?: 'horz' | 'vert'
+	/** placeholder size (`p:ph@sz`) */
+	sz?: 'full' | 'half' | 'quarter'
+	/** author-placed rather than layout furniture (`p:nvPr@userDrawn`) */
+	userDrawn?: boolean
 	/** image added without `w`/`h`: size it from the image itself during export @internal */
 	_sizeFromImage?: boolean
 	/** Caller set this axis; placeholder geometry must not overwrite it. */
@@ -3597,6 +3746,14 @@ export interface SlideBaseProps {
 	bkgd?: string | BackgroundProps
 }
 export interface SlideLayout extends SlideBaseProps {
+	layoutType?: SlideLayoutType
+	matchingName?: string
+	preserve?: boolean
+	showMasterShapes?: boolean
+	showMasterPlaceholderAnimation?: boolean
+	userDrawn?: boolean
+	colorMapOverride?: ColorMapOverrideProps
+	transition?: SlideTransitionProps
 	_slide?: {
 		_bkgdImgRid?: number
 		back: string
@@ -3926,6 +4083,104 @@ export interface SlideShowProps {
 	laserColor?: Color
 }
 
+/**
+ * Additional document properties (ECMA-376 15.2 and the OPC core properties)
+ * - each is omitted when unset, so `docProps` output is unchanged by default
+ */
+export interface DocumentProps {
+	/** `dc:description` - the Comments field in PowerPoint's Info pane */
+	description?: string
+	/** `dc:language`, ex: 'en-US' */
+	language?: string
+	/** `dc:identifier` */
+	identifier?: string
+	/** `cp:keywords`, comma-separated */
+	keywords?: string
+	/** `cp:category` */
+	category?: string
+	/** `cp:contentStatus`, ex: 'Draft' */
+	contentStatus?: string
+	/** `cp:version` */
+	version?: string
+	/** `cp:lastPrinted`, ISO 8601 */
+	lastPrinted?: string
+	/** `Manager` in app.xml */
+	manager?: string
+	/** `Template` in app.xml */
+	template?: string
+	/** `HyperlinkBase` in app.xml - the base for relative hyperlinks */
+	hyperlinkBase?: string
+	/** `TotalTime` in app.xml - editing time in minutes */
+	totalEditTime?: number
+}
+/**
+ * Slide-size preset (`p:sldSz@type`)
+ */
+export type SlideSizeType =
+	| 'screen4x3' | 'screen16x9' | 'screen16x10' | 'letter' | 'ledger' | 'a3' | 'a4' | 'b4ISO'
+	| 'b5ISO' | 'b4JIS' | 'b5JIS' | 'hagakiCard' | '35mm' | 'overhead' | 'banner' | 'custom'
+/**
+ * Photo-album mode (`p:photoAlbum`)
+ */
+export interface PhotoAlbumProps {
+	/** render in black and white */
+	blackWhite?: boolean
+	/** show captions below each picture */
+	showCaptions?: boolean
+	/** pictures per slide and orientation */
+	layout?: 'fitToSlide' | '1pic' | '2pic' | '4pic' | '1picTitle' | '2picTitle' | '4picTitle'
+	/** frame style drawn around each picture */
+	frame?: 'frameStyle1' | 'frameStyle2' | 'frameStyle3' | 'frameStyle4' | 'frameStyle5' | 'frameStyle6' | 'frameStyle7'
+}
+/**
+ * East Asian line-breaking rules (`p:kinsoku`)
+ */
+export interface KinsokuProps {
+	/** language the rules apply to, ex: 'ja-JP' */
+	lang?: string
+	/** characters that may not start a line */
+	invalidStartChars?: string
+	/** characters that may not end a line */
+	invalidEndChars?: string
+}
+/**
+ * Print defaults stored with the deck (`p:prnPr` on `presentationPr`)
+ */
+export interface PrintProps {
+	/** what to print */
+	what?: 'slides' | 'handouts1' | 'handouts2' | 'handouts3' | 'handouts4' | 'handouts6' | 'handouts9' | 'notes' | 'outline'
+	/** colour mode */
+	colorMode?: 'bw' | 'gray' | 'clr'
+	/** include hidden slides */
+	hiddenSlides?: boolean
+	/** scale to fit the paper */
+	scaleToFitPaper?: boolean
+	/** draw a frame around each slide */
+	frameSlides?: boolean
+}
+/**
+ * View properties stored in `ppt/viewProps.xml` (`p:viewPr`)
+ * - unset values keep the literal prior versions wrote
+ */
+export interface ViewProps {
+	/** zoom percent in the normal slide view @default 136 */
+	zoom?: number
+	/** snap objects to the grid @default false */
+	snapToGrid?: boolean
+	/** snap objects to each other @default true */
+	snapToObjects?: boolean
+	/** show drawing guides */
+	showGuides?: boolean
+	/** show comments and ink markup */
+	showComments?: boolean
+	/** grid spacing in inches @default 0.0833 (76200 EMU) */
+	gridSpacing?: number
+	/** view PowerPoint opens the deck in */
+	lastView?: 'sldView' | 'sldMasterView' | 'notesView' | 'handoutView' | 'notesMasterView' | 'outlineView' | 'sldSorterView' | 'sldThumbnailView'
+	/** classic drawing guides (`p:guideLst`), positioned in inches */
+	guides?: GuideProps[]
+}
+
 export interface PresentationProps {
 	author: string
 	company: string
@@ -4048,6 +4303,35 @@ export interface PresentationProps {
 	subject: string
 	theme?: ThemeProps
 	title: string
+	/**
+	 * Additional document properties written to `docProps`
+	 */
+	documentProps?: DocumentProps
+	/**
+	 * Slide-size preset (`p:sldSz@type`)
+	 * - the dimensions come from the layout; this records which preset they match
+	 */
+	slideSizeType?: SlideSizeType
+	/**
+	 * Photo-album mode (`p:photoAlbum`)
+	 */
+	photoAlbum?: PhotoAlbumProps
+	/**
+	 * East Asian line-breaking rules (`p:kinsoku`)
+	 */
+	kinsoku?: KinsokuProps
+	/**
+	 * Print defaults stored with the deck (`p:prnPr` on `presentationPr`)
+	 */
+	printProps?: PrintProps
+	/**
+	 * Recently-used colours shown in the colour picker (`p:clrMru` on `presentationPr`)
+	 */
+	recentColors?: Color[]
+	/**
+	 * View properties (`ppt/viewProps.xml`). Unset keeps the previous hardcoded viewPr.
+	 */
+	viewProps?: ViewProps
 }
 /** One collaborating application instance in `revInfo` (MS-PPTX §2.7.3.1 `CT_ClientRevision`). */
 export interface RevisionClientProps {

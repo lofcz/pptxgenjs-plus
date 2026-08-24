@@ -710,3 +710,73 @@ test('contract: invalid picture fills degrade instead of writing broken XML', as
 	assert.match(xml, /algn="tl"/, 'an unknown tile alignment falls back to tl')
 	assert.doesNotMatch(xml, /r:embed="rId0"/, 'no fill may reference a non-existent relationship')
 })
+
+const LOCK_PNG = 'image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAADklEQVR4nGP4jwQYkDkANvEX6SAXxcIAAAAASUVORK5CYII='
+
+test('contract: unit-suffixed lengths reach the slide XML as EMU', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addText('Metrisch', { x: '2.54cm', y: '25.4mm', w: '72pt', h: '1in' })
+	slide.addTable([['A', 'B']], { x: '2.54cm', y: 3, colW: ['2.54cm', '2.54cm'] as unknown as number[], rowH: '2.54cm' as unknown as number })
+	const unitZip = await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer)
+	const xml = await readPart(unitZip, 'ppt/slides/slide1.xml')
+
+	assert.doesNotMatch(xml, /NaN/, 'no coordinate resolved to NaN')
+	assert.match(xml, /<a:off x="914400" y="914400"\/><a:ext cx="914400" cy="914400"\/>/, 'cm/mm/pt/in all resolve to one inch')
+	assert.equal((xml.match(/<a:gridCol w="914400"\/>/g) ?? []).length, 2, 'colW tolerates suffixed lengths')
+	assert.match(xml, /<a:tr h="914400">/, 'rowH tolerates suffixed lengths')
+})
+
+test('contract: editing locks and non-visual properties are reachable', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addShape(pptx.ShapeType.rect, {
+		x: 1, y: 1, w: 2, h: 1,
+		objectName: 'Locked Box', title: 'Alt title', hidden: true,
+		lock: { noMove: true, noResize: true, noSelect: true, noTextEdit: true },
+	})
+	slide.addImage({ data: LOCK_PNG, x: 4, y: 1, w: 1, h: 1, lock: { noCrop: true, preferRelativeResize: true }, title: 'Pic title' })
+	slide.addTable([['a']], { x: 1, y: 3, w: 4, lock: { noSelect: true } })
+	const lockZip = await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer)
+	await assertPptxPackageContracts(lockZip)
+	const xml = await readPart(lockZip, 'ppt/slides/slide1.xml')
+
+	assert.doesNotMatch(xml, /NaN|undefined/, 'lock options must not leak invalid values')
+	assert.match(xml, /<p:cNvPr id="2" name="Locked Box" title="Alt title" hidden="1"\/>/, 'shape non-visual props missing')
+	assert.match(xml, /<a:spLocks noSelect="1" noMove="1" noResize="1" noTextEdit="1"\/>/, 'shape locks missing')
+	assert.match(xml, /<p:cNvPicPr preferRelativeResize="1"><a:picLocks noChangeAspect="1" noCrop="1"\/><\/p:cNvPicPr>/, 'picture locks missing')
+	assert.match(xml, /title="Pic title"/, 'picture alt title missing')
+	assert.match(xml, /<a:graphicFrameLocks noGrp="1" noSelect="1"\/>/, 'graphic frame locks missing')
+})
+
+test('contract: locks that do not apply to an object are dropped with a warning', async () => {
+	const warnings: string[] = []
+	const origWarn = console.warn
+	console.warn = (msg: string) => warnings.push(String(msg))
+	let xml = ''
+	try {
+		const pptx = new pptxgen()
+		pptx.addSlide().addTable([['a']], { x: 1, y: 1, w: 3, lock: { noTextEdit: true, noSelect: true } })
+		pptx.addSlide().addShape(pptx.ShapeType.rect, { x: 1, y: 1, w: 2, h: 1, lock: { noCrop: true, noMove: true } })
+		xml = await readPart(await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer), 'ppt/slides/slide1.xml')
+	} finally {
+		console.warn = origWarn
+	}
+
+	assert.equal(warnings.filter(w => w.includes('does not apply to this object type')).length, 2, 'inapplicable locks must warn')
+	assert.match(xml, /<a:graphicFrameLocks noGrp="1" noSelect="1"\/>/, 'the applicable lock must survive')
+	assert.doesNotMatch(xml, /noTextEdit/, 'an inapplicable lock must not be emitted')
+})
+
+test('contract: objects without locks keep the output they always had', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addShape(pptx.ShapeType.rect, { x: 1, y: 1, w: 2, h: 1 })
+	slide.addImage({ data: LOCK_PNG, x: 4, y: 1, w: 1, h: 1 })
+	slide.addTable([['a']], { x: 1, y: 3, w: 3 })
+	const xml = await readPart(await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer), 'ppt/slides/slide1.xml')
+
+	assert.doesNotMatch(xml, /a:spLocks|title=|hidden=|preferRelativeResize/, 'no lock or non-visual attribute may appear unasked')
+	assert.match(xml, /<p:cNvPicPr><a:picLocks noChangeAspect="1"\/><\/p:cNvPicPr>/, 'default picture lock changed')
+	assert.match(xml, /<a:graphicFrameLocks noGrp="1"\/>/, 'default frame lock changed')
+})

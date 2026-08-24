@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `addSummaryZoom({ sectionTitles })` can target multiple sections
 - `pptxgenjs-plus-std` workspace package with `grid` / `gridFor` layout helpers and a stacked-bar `waterfall` construction (ported from NeomaVerwaltung/PptxGenJS)
 - `pptxgenjs-plus-std` text measure helpers (`measureText`, `fitText`, `checkOverflow`, `registerFontMetrics`), metric/point converters (`cm`, `pt`), `row`/`column` splits, and measured `paginateTable` / `tableFromHtml` paging
+- Opt-in presentation children: `photoAlbum`, `kinsoku`, `slideSizeType` (`p:sldSz@type`); print/recent-color props land on `presentationPr` (`printProps`, `recentColors`)
+- Configurable `viewProps` (zoom, snap, guides, lastView) — the hardcoded `viewProps.xml` is kept until the caller sets options
+- Extra `documentProps` for core.xml/app.xml (keywords, category, description, manager, template, counts)
+- Slide-layout metadata (`layoutType`, `matchingName`, `showMasterShapes`, `preserve`, colour-map override, per-layout transition) and placeholder `orient`/`sz`/`userDrawn`
+- Editing locks (`lock`) plus `cNvPr` `title`/`hidden` on shapes, groups, images, tables, and connectors
+- `UnitLength` (`in`/`cm`/`mm`/`pt`) on `Coord`; unit-suffixed strings parse in `getSmartParseNumber` / `inch2Emu`
 
 ### Changed
 

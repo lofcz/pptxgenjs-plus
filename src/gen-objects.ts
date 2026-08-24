@@ -704,6 +704,10 @@ export function addImageDefinition(target: PresSlide | SlideLayout, opt: ImagePr
 		recolor: opt.recolor,
 		styleRef: opt.styleRef,
 		line: opt.line || imageBorderToLine(opt.border),
+		// non-visual props and locks are part of the object's identity, not its geometry
+		title: opt.title,
+		hidden: opt.hidden,
+		lock: opt.lock,
 		_sizeFromImage: !intWidth && !intHeight,
 		// addImage always writes x/y/w/h defaults, so remember which axes the caller actually set
 		// (placeholder geometry must not overwrite explicit placement; fujita-h d7e3e93 / #996).
@@ -2029,6 +2033,9 @@ export function addGroupDefinition (target: PresSlide, opts: GroupProps, objects
 			shadow: opts.shadow ? correctShadowOptions(opts.shadow) : undefined,
 			fill: opts.fill,
 			objectName: opts.objectName ? encodeXmlEntities(opts.objectName) : `Group ${groupCount + 1}`,
+			title: opts.title,
+			hidden: opts.hidden,
+			lock: opts.lock,
 		},
 		_objects: objects,
 	}

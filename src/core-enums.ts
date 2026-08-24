@@ -12,6 +12,16 @@ export const CRLF = '\r\n' // AKA: Chr(13) & Chr(10)
 export const LAYOUT_IDX_SERIES_BASE = 2147483649
 /** ECMA-376 20.1.10.55 ST_RectAlignment — where a tiled picture fill starts */
 export const TILE_ALIGNMENTS = new Set(['tl', 't', 'tr', 'l', 'ctr', 'r', 'bl', 'b', 'br'])
+/**
+ * ECMA-376 20.1.6.2 CT_ColorMapping - the identity map, which is what `a:masterClrMapping` means
+ * - all twelve attributes are required, so a partial `colorMapOverride` is filled from this
+ */
+export const DEF_COLOR_MAP = Object.freeze({
+	bg1: 'lt1', tx1: 'dk1', bg2: 'lt2', tx2: 'dk2',
+	accent1: 'accent1', accent2: 'accent2', accent3: 'accent3',
+	accent4: 'accent4', accent5: 'accent5', accent6: 'accent6',
+	hlink: 'hlink', folHlink: 'folHlink',
+})
 export const REGEX_HEX_COLOR = /^[0-9a-fA-F]{6}$/
 export const LINEH_MODIFIER = 1.67 // AKA: Golden Ratio Typography
 
