@@ -3507,3 +3507,60 @@ test('OMML: malformed omml option throws instead of writing a corrupt package', 
 	const xml = await readPart(await writeZip(pptx3), 'ppt/slides/slide1.xml')
 	assert.ok(xml.includes('a&lt;b&amp;c'), 'valid OMML was rejected or mangled')
 })
+
+test('#157: chart style and color parts are opt-in for classic charts', async () => {
+	const data = [{ name: 'S1', labels: ['a', 'b'], values: [1, 2] }]
+	const def = new pptxgen()
+	def.addSlide().addChart('bar', data, { x: 1, y: 1, w: 6, h: 4 })
+	const defZip = await writeZip(def)
+	assert.ok(!Object.keys(defZip.files).some(name => /\/(colors|style)\d+\.xml$/.test(name)), 'default classic charts must not write style or colors parts')
+	assert.ok(!(await readPart(defZip, '[Content_Types].xml')).includes('chartstyle'), 'default classic charts must not declare a chart style content type')
+
+	const pptx = new pptxgen()
+	pptx.addSlide().addChart('bar', data, { x: 1, y: 1, w: 6, h: 4, chartStyle: 201 })
+	pptx.addSlide().addChart('pie', data, { x: 1, y: 1, w: 6, h: 4, chartStyle: 251, chartColorStyle: { method: 'withinLinear', id: 13, colors: ['accent3', 'FF0000'] } })
+
+	const zip = await writeZip(pptx)
+	const chartParts = Object.keys(zip.files).filter(name => /^ppt\/charts\/(chart|colors|style)\d+\.xml$/.test(name)).sort()
+	const chartNums = chartParts.filter(name => /\/chart\d+\.xml$/.test(name)).map(name => /(\d+)\.xml$/.exec(name)?.[1] ?? '')
+	assert.equal(chartNums.length, 2, `expected two charts, got ${chartNums.join(',')}`)
+	for (const num of chartNums) {
+		assert.ok(chartParts.includes(`ppt/charts/colors${num}.xml`), `missing colors${num}.xml`)
+		assert.ok(chartParts.includes(`ppt/charts/style${num}.xml`), `missing style${num}.xml`)
+	}
+
+	const rels = await readPart(zip, `ppt/charts/_rels/chart${chartNums[0]}.xml.rels`)
+	assert.ok(rels.includes(`<Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" Target="colors${chartNums[0]}.xml"/>`), `colour-style relationship wrong: ${rels}`)
+	assert.ok(rels.includes(`<Relationship Id="rId3" Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" Target="style${chartNums[0]}.xml"/>`), `style relationship wrong: ${rels}`)
+	assert.ok(rels.includes('rId1'), 'the embedded workbook relationship was displaced')
+
+	const contentTypes = await readPart(zip, '[Content_Types].xml')
+	for (const num of chartNums) {
+		assert.ok(contentTypes.includes(`<Override PartName="/ppt/charts/colors${num}.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>`), `colors${num}.xml content type missing`)
+		assert.ok(contentTypes.includes(`<Override PartName="/ppt/charts/style${num}.xml" ContentType="application/vnd.ms-office.chartstyle+xml"/>`), `style${num}.xml content type missing`)
+	}
+
+	const colors = await readPart(zip, `ppt/charts/colors${chartNums[0]}.xml`)
+	assert.ok(colors.includes('xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle"'), 'the cs namespace is wrong')
+	assert.ok(colors.includes('meth="cycle" id="10">'), `default colour style wrong: ${colors.slice(0, 300)}`)
+	assert.ok(colors.includes('<a:schemeClr val="accent1"/><a:schemeClr val="accent2"/>'), 'the default palette is not the theme accents')
+	assert.equal((colors.match(/<cs:variation/g) ?? []).length, 9, 'expected nine luminance variations')
+
+	const style = await readPart(zip, `ppt/charts/style${chartNums[0]}.xml`)
+	assert.ok(style.includes('<cs:chartStyle ') && style.includes(' id="201">'), `default style id wrong: ${style.slice(0, 260)}`)
+	assert.ok(style.includes('<cs:axisTitle>') && style.includes('<cs:dataPoint>') && style.includes('<cs:plotArea'), 'the style definitions are incomplete')
+
+	const colors2 = await readPart(zip, `ppt/charts/colors${chartNums[1]}.xml`)
+	assert.ok(colors2.includes('meth="withinLinear" id="13">'), `colour style override ignored: ${colors2.slice(0, 260)}`)
+	assert.ok(colors2.includes('<a:schemeClr val="accent3"/><a:srgbClr val="FF0000"/>'), 'a custom palette was ignored')
+	assert.ok((await readPart(zip, `ppt/charts/style${chartNums[1]}.xml`)).includes(' id="251">'), 'the style id override was ignored')
+
+	const chartXml = await readPart(zip, `ppt/charts/chart${chartNums[0]}.xml`)
+	assert.ok(!chartXml.includes('chartStyle') && !chartXml.includes('colorStyle'), 'chartN.xml should not reference the style parts')
+
+	const bare = new pptxgen()
+	bare.addSlide().addText('hi', { x: 1, y: 1 })
+	const bareZip = await writeZip(bare)
+	assert.ok(!Object.keys(bareZip.files).some(name => /colors\d+\.xml|style\d+\.xml/.test(name)), 'a chartless deck gained chart style parts')
+	assert.ok(!(await readPart(bareZip, '[Content_Types].xml')).includes('chartstyle'), 'a chartless deck gained a chart style content type')
+})

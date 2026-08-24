@@ -8,13 +8,17 @@ import {
 	DEF_PRES_LAYOUT_NAME,
 	DEF_TEXT_SHADOW,
 	EMU,
+	OOXML_CHARTEX,
 	SHAPE_TYPE,
 	SLDNUMFLDID,
 	SLIDE_OBJECT_TYPES,
+	chartExRequiresNs,
+	isChartexType,
 } from '../core-enums'
 import {
 	BlurProps,
 	Coord,
+	IChartOptsLib,
 	ISlideObject,
 	ObjectOptions,
 	PresLayout,
@@ -45,7 +49,7 @@ import {
 import { getImagePixelSize } from '../gen-media'
 import { genXmlCreationIdExt, genXmlModIdExt, TABLE_MOD_ID_BASE } from '../gen-revision'
 import { genXmlContentPartAlternate, genXmlOfficeAppAlternate } from './content-parts'
-import { genXmlNvPrExtLst, genXmlPlaceholder, genXmlTextBody, textRunsHaveOmml } from './text'
+import { MC_NS, genXmlNvPrExtLst, genXmlPlaceholder, genXmlTextBody, textRunsHaveOmml } from './text'
 
 function nvPrModIdExt (modId?: number): string {
 	return genXmlModIdExt(modId).replace(/^<p:extLst>|<\/p:extLst>$/g, '')
@@ -53,6 +57,39 @@ function nvPrModIdExt (modId?: number): string {
 
 function genXmlNvPr (options?: ObjectOptions, phXml = '', extraExts: string[] = []): string {
 	return `<p:nvPr>${phXml}${genXmlNvPrExtLst(options, extraExts)}</p:nvPr>`
+}
+
+/**
+ * Fallback shape for a chartex graphic frame (`mc:Fallback`).
+ *
+ * PowerPoint writes a rendered preview picture here, which this library cannot produce without a
+ * rasterizer. A locked, non-editable text shape occupying the same box is the closest honest
+ * substitute: a consumer that rejects the `mc:Choice` still sees where the chart is and why it is
+ * not drawn, and cannot silently edit it into something that no longer matches the chart part.
+ */
+function genXmlChartExFallback (shapeId: number, slideItemObj: ISlideObject, box: { x: number, y: number, cx: number, cy: number }): string {
+	const options = slideItemObj.options ?? {}
+	const name = options.objectName ?? 'Chart'
+	const message = 'This chart is not available in your version of PowerPoint. Editing this shape or saving this file in a different format will permanently break the chart.'
+	// A chart's `title` is the chart title, not the alt-text title `p:cNvPr@title` carries.
+	// `noTextEdit` is not optional: an edited fallback would no longer match the chart part.
+
+	return (
+		'<p:sp>' +
+		'<p:nvSpPr>' +
+		`<p:cNvPr id="${shapeId}" name="${encodeXmlEntities(name)}" descr="${encodeXmlEntities(options.altText ?? message)}"/>` +
+		'<p:cNvSpPr><a:spLocks noTextEdit="1"/></p:cNvSpPr>' +
+		'<p:nvPr/>' +
+		'</p:nvSpPr>' +
+		`<p:spPr><a:xfrm><a:off x="${box.x}" y="${box.y}"/><a:ext cx="${box.cx}" cy="${box.cy}"/></a:xfrm>` +
+		'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>' +
+		'<a:solidFill><a:prstClr val="white"/></a:solidFill>' +
+		'<a:ln><a:solidFill><a:prstClr val="black"/></a:solidFill></a:ln></p:spPr>' +
+		'<p:txBody><a:bodyPr vertOverflow="clip" horzOverflow="clip" wrap="square"><a:normAutofit/></a:bodyPr><a:lstStyle/>' +
+		`<a:p><a:r><a:rPr lang="en-US" sz="1100"/><a:t>${encodeXmlEntities(message)}</a:t></a:r></a:p>` +
+		'</p:txBody>' +
+		'</p:sp>'
+	)
 }
 
 const ImageSizingXml = {
@@ -1153,21 +1190,42 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					break
 				}
 
-				case SLIDE_OBJECT_TYPES.chart:
-					strSlideXml += '<p:graphicFrame>'
-					strSlideXml += ' <p:nvGraphicFramePr>'
-					strSlideXml += `   <p:cNvPr id="${shapeId}" name="${slideItemObj.options.objectName}" descr="${encodeXmlEntities(slideItemObj.options.altText || '')}"/>`
-					strSlideXml += '   <p:cNvGraphicFramePr/>'
-					strSlideXml += genXmlNvPr(slideItemObj.options, genXmlPlaceholder(placeholderObj, slideItemObj.options), [nvPrModIdExt(slideItemObj.options.modId)])
-					strSlideXml += ' </p:nvGraphicFramePr>'
-					strSlideXml += ` <p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm>`
-					strSlideXml += ' <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
-					strSlideXml += '  <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'
-					strSlideXml += `   <c:chart r:id="rId${slideItemObj.chartRid}" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>`
-					strSlideXml += '  </a:graphicData>'
-					strSlideXml += ' </a:graphic>'
-					strSlideXml += '</p:graphicFrame>'
+				case SLIDE_OBJECT_TYPES.chart: {
+					const chartType = (slideItemObj.options as IChartOptsLib | undefined)?._type
+					const isChartex = isChartexType(chartType)
+					const graphicDataUri = isChartex ? OOXML_CHARTEX.ns : 'http://schemas.openxmlformats.org/drawingml/2006/chart'
+					const chartRef = isChartex
+						? `<cx:chart xmlns:cx="${OOXML_CHARTEX.ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId${slideItemObj.chartRid}"/>`
+						: `<c:chart r:id="rId${slideItemObj.chartRid}" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>`
+
+					let frameXml = '<p:graphicFrame>'
+					frameXml += ' <p:nvGraphicFramePr>'
+					frameXml += `   <p:cNvPr id="${shapeId}" name="${slideItemObj.options.objectName}" descr="${encodeXmlEntities(slideItemObj.options.altText || '')}"/>`
+					frameXml += '   <p:cNvGraphicFramePr/>'
+					frameXml += genXmlNvPr(slideItemObj.options, genXmlPlaceholder(placeholderObj, slideItemObj.options), [nvPrModIdExt(slideItemObj.options.modId)])
+					frameXml += ' </p:nvGraphicFramePr>'
+					frameXml += ` <p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm>`
+					frameXml += ' <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+					frameXml += `  <a:graphicData uri="${graphicDataUri}">`
+					frameXml += `   ${chartRef}`
+					frameXml += '  </a:graphicData>'
+					frameXml += ' </a:graphic>'
+					frameXml += '</p:graphicFrame>'
+
+					// A chartex frame replaces a standard graphic frame, so MS-PPTX 2.2 requires it be offered
+					// through `mc:AlternateContent`. PowerPoint's own fallback is a rendered preview image, which
+					// cannot be produced here - a locked text shape carrying the same message is the honest
+					// equivalent for a consumer that does not understand the chartex namespace.
+					strSlideXml += isChartex
+						? `<mc:AlternateContent xmlns:mc="${MC_NS}">` +
+							`<mc:Choice xmlns:cx1="${chartExRequiresNs(chartType)}" Requires="cx1">` +
+							frameXml +
+							'</mc:Choice>' +
+							`<mc:Fallback>${genXmlChartExFallback(shapeId, slideItemObj, { x, y, cx, cy })}</mc:Fallback>` +
+							'</mc:AlternateContent>'
+						: frameXml
 					break
+				}
 
 				case SLIDE_OBJECT_TYPES.group: {
 				// PresentationML `p:grpSp` (ECMA-376 §19.3.1.22): nvGrpSpPr + grpSpPr + children.

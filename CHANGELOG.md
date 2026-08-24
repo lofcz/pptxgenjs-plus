@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PowerPoint 2016+ ChartEx types (`boxWhisker`, `funnel`, `histogram`, `sunburst`, `treemap`, `waterfall`) as native `cx:chart` parts; `addChart` accepts both `CHART_NAME` and `CHARTEX_NAME`
+- Opt-in chart style and chart colors parts (`cs:chartStyle`, `cs:colorStyle`) via `chartStyle` / `chartColorStyle`; ChartEx layouts always write them
 - Text `vertOverflow` / `horzOverflow` emit ECMA-376 `a:bodyPr` overflow attrs so overflowing runs can clip instead of spilling out of the shape
 - Package-contract tests for opt-in `addFont` (Font parts, `application/x-fontdata`, Presentation font rels); default export embeds nothing
 - `pptx.slideShow` emits a spec-valid `p:showPr` with the required present/browse/kiosk choice, plus loop/narration/animation/timing flags

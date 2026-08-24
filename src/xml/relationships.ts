@@ -2,7 +2,7 @@
  * Relationship-part rendering.
  */
 
-import { CRLF, SLIDE_OBJECT_TYPES } from '../core-enums'
+import { CRLF, OOXML_CHARTEX, SLIDE_OBJECT_TYPES, isChartexType } from '../core-enums'
 import { COMMENT_REL_TYPE } from '../gen-comments'
 import { ISlideRel, ISlideRelChart, ISlideRelMedia, PresSlide, SlideLayout } from '../core-interfaces'
 import { REL_TYPE_CUSTOM_XML, REL_TYPE_WEBEXTENSION } from './content-parts'
@@ -42,7 +42,8 @@ function slideObjectRelationsToXml (slide: PresSlide | SlideLayout, defaultRels:
 		// is the absolute `/ppt/charts/chartN.xml` form reused as Content_Types PartName.
 		// PowerPoint writes the relative `../charts/chartN.xml`; absolute targets are valid but
 		// non-idiomatic and break stricter consumers (PR 1465 / eliasaronson).
-		strXml += `<Relationship Id="rId${rel.rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="${rel.Target.replace(/^\/ppt\//, '../')}"/>`
+		const relType = isChartexType(rel.opts._type) ? OOXML_CHARTEX.relType : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
+		strXml += `<Relationship Id="rId${rel.rId}" Type="${relType}" Target="${rel.Target.replace(/^\/ppt\//, '../')}"/>`
 	})
 	; (slide._relsMedia || []).forEach((rel: ISlideRelMedia) => {
 		const relRid = rel.rId.toString()

@@ -1,9 +1,11 @@
 /** Embedded Excel workbook generation for charts. */
 
 import { JSZip } from '@node-projects/jszip'
-import { CHART_TYPE } from '../core-enums'
+import { CHART_STYLE, CHART_TYPE, isChartexType } from '../core-enums'
 import { ISlideRelChart } from '../core-interfaces'
 import { encodeXmlEntities } from '../gen-utils'
+import { makeXmlChartEx } from './chartex'
+import { chartColorsPartName, chartStylePartName, makeXmlChartColors, makeXmlChartStyle, wantsChartStyleParts } from './style'
 import { makeXmlCharts } from './xml'
 import { countErrorrateSeries, getExcelColName, seriesHasErrorrate } from './utils'
 
@@ -624,14 +626,28 @@ function addWorkbookToPresentation (chartObject: ISlideRelChart, zipExcel: JSZip
 				zip.file(`ppt/embeddings/Microsoft_Excel_Worksheet${chartObject.globalId}.xlsx`, content, { base64: true })
 
 				// 2: Create the chart.xml and rel files
+				// PowerPoint finds the style and colour-style parts by relationship type, so they are
+				// declared here rather than referenced from inside `chartN.xml`.
+				// Classic charts write them only when requested; ChartEx layouts always need them.
+				const isChartex = isChartexType(chartObject.opts._type)
+				const writeStyleParts = wantsChartStyleParts(chartObject.opts)
+				const styleRels = writeStyleParts
+					? `<Relationship Id="rId2" Type="${CHART_STYLE.colorsRelType}" Target="colors${chartObject.globalId}.xml"/>` +
+					`<Relationship Id="rId3" Type="${CHART_STYLE.styleRelType}" Target="style${chartObject.globalId}.xml"/>`
+					: ''
 				zip.file(
 					'ppt/charts/_rels/' + chartObject.fileName + '.rels',
 					'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
 					'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
 					`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/Microsoft_Excel_Worksheet${chartObject.globalId}.xlsx"/>` +
+					styleRels +
 					'</Relationships>'
 				)
-				zip.file(`ppt/charts/${chartObject.fileName}`, makeXmlCharts(chartObject))
+				zip.file(`ppt/charts/${chartObject.fileName}`, isChartex ? makeXmlChartEx(chartObject) : makeXmlCharts(chartObject))
+				if (writeStyleParts) {
+					zip.file(chartColorsPartName(chartObject.globalId), makeXmlChartColors(chartObject.opts?.chartColorStyle))
+					zip.file(chartStylePartName(chartObject.globalId), makeXmlChartStyle(chartObject.opts?.chartStyle))
+				}
 
 				// 3: Done
 				resolve('')

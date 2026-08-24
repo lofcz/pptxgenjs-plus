@@ -2,7 +2,7 @@
  * PptxGenJS: Slide Class
  */
 
-import { CHART_NAME, SHAPE_NAME } from './core-enums'
+import { CHART_NAME, CHARTEX_NAME, SHAPE_NAME } from './core-enums'
 import {
 	AddSlideProps,
 	AnimationConfig,
@@ -207,7 +207,7 @@ export default class Slide {
 	 * @param {IChartOpts} options - chart options
 	 * @return {Slide} this Slide
 	 */
-	addChart(type: CHART_NAME | IChartMulti[], data: IOptsChartData[], options?: IChartOpts): Slide {
+	addChart(type: CHART_NAME | CHARTEX_NAME | IChartMulti[], data: IOptsChartData[], options?: IChartOpts): Slide {
 		// FUTURE: TODO-VERSION-4: Remove first arg - only take data and opts, with "type" required on opts
 		genObj.addChartDefinition(this, type, Array.isArray(data) ? data.map(item => ({ ...item })) : data, cloneOpts(options))
 		return this

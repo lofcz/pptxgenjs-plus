@@ -5,7 +5,9 @@
 import {
 	BARCHART_COLORS,
 	CHART_NAME,
+	CHARTEX_NAME,
 	CHART_TYPE,
+	isChartexType,
 	DEF_CELL_BORDER,
 	DEF_CELL_MARGIN_IN,
 	DEF_CHART_BORDER,
@@ -159,7 +161,7 @@ export function createSlideMaster(props: SlideMasterProps, target: SlideLayout):
  *    ]
  * }
  */
-export function addChartDefinition(target: PresSlide | SlideLayout, type: CHART_NAME | IChartMulti[], data: IOptsChartData[], opt: IChartOptsLib): object {
+export function addChartDefinition(target: PresSlide | SlideLayout, type: CHART_NAME | CHARTEX_NAME | IChartMulti[], data: IOptsChartData[], opt: IChartOptsLib): object {
 	function correctGridLineOptions(glOpts: OptsChartGridLine): void {
 		if (!glOpts || glOpts.style === 'none') return
 		if (glOpts.size !== undefined && (isNaN(Number(glOpts.size)) || glOpts.size <= 0)) {
@@ -189,6 +191,11 @@ export function addChartDefinition(target: PresSlide | SlideLayout, type: CHART_
 	let tmpOpt: IChartOptsLib | IOptsChartData[]
 	let tmpData: IOptsChartData[] = []
 	if (Array.isArray(type)) {
+		// A chartex layout owns the whole `cx:plotArea` and cannot share one with an ECMA-376 chart type,
+		// so a multi-type spec that names one would silently render as an empty frame
+		const chartexSpec = type.find(obj => isChartexType(obj.type))
+		if (chartexSpec) throw new Error(`pptxgenjs: chart type "${String(chartexSpec.type)}" cannot be combined in a multi-type chart`)
+
 		// For multi-type charts there needs to be data for each type,
 		// as well as a single data source for non-series operations.
 		// The data is indexed below to keep the data in order when segmented
@@ -266,8 +273,17 @@ export function addChartDefinition(target: PresSlide | SlideLayout, type: CHART_
 	// NOTE: a multi-type chart has no single type to validate against, so only the name translation applies there
 	if (options.dataLabelPosition) {
 		const chartType = Array.isArray(options._type) ? undefined : options._type
-		options.dataLabelPosition = resolveDataLabelPosition(options.dataLabelPosition, chartType, options.barGrouping) as typeof options.dataLabelPosition
-		if (!options.dataLabelPosition) delete options.dataLabelPosition
+		if (isChartexType(chartType)) {
+			// `cx:dataLabels@pos` is its own vocabulary, not `c:dLblPos`; these three are the values the
+			// shipped chartex writers emit, so anything else falls back to the layout's own default
+			if (!['ctr', 'inEnd', 'outEnd'].includes(options.dataLabelPosition)) {
+				console.warn(`[pptxgenjs] dataLabelPosition '${options.dataLabelPosition}' is not valid for a '${chartType}' chart - ignoring it (valid: ctr, inEnd, outEnd)`)
+				delete options.dataLabelPosition
+			}
+		} else {
+			options.dataLabelPosition = resolveDataLabelPosition(options.dataLabelPosition, chartType, options.barGrouping) as typeof options.dataLabelPosition
+			if (!options.dataLabelPosition) delete options.dataLabelPosition
+		}
 	}
 	options.dataLabelBkgrdColors = options.dataLabelBkgrdColors || !options.dataLabelBkgrdColors ? options.dataLabelBkgrdColors : false
 	if (!['b', 'l', 'r', 't', 'tr'].includes(options.legendPos || '')) options.legendPos = 'r'
@@ -396,6 +412,48 @@ export function addChartDefinition(target: PresSlide | SlideLayout, type: CHART_
 		delete options.catAxisMultiLevelLabels
 	}
 
+	// ChartEx: reject values PowerPoint would reject, so a bad option degrades to the layout default
+	// rather than to the repair dialog
+	if (isChartexType(options._type)) {
+		// Only box & whisker plots more than one distribution; the other layouts own the whole plot area
+		// and a second `cx:series` is either dropped or flagged for repair
+		if (options._type !== CHART_TYPE.BOX_WHISKER && tmpData.length > 1) {
+			console.warn(`Warning: a ${options._type} chart plots one series - ignoring ${tmpData.length - 1} extra series.`)
+			tmpData = tmpData.slice(0, 1)
+		}
+		tmpData.forEach(item => {
+			// ChartEx cell references assume one label column; the multi-level worksheet layout shifts the
+			// series columns right, so the extra levels are dropped rather than silently misaddressed
+			if (item.labels && item.labels.length > 1) {
+				console.warn('Warning: chartex charts take single-level category labels - using the first level.')
+				item.labels = [item.labels[0]]
+			}
+			// A histogram bins raw values and needs no categories, but the embedded worksheet still writes a
+			// row per label, so a label-less series is padded rather than left to fail during write()
+			const labels = item.labels?.[0]
+			if (!labels || labels.length === 0) item.labels = [Array<string>((item.values ?? []).length).fill('')]
+		})
+
+		const pointCount = Math.max(...tmpData.map(item => (item.values ?? []).length), 0)
+		if (options.chartExSubtotals) {
+			const valid = options.chartExSubtotals.filter(idx => Number.isInteger(idx) && idx >= 0 && idx < pointCount)
+			if (valid.length !== options.chartExSubtotals.length) console.warn(`Warning: chart.chartExSubtotals must be data point indexes 0-${pointCount - 1}.`)
+			options.chartExSubtotals = valid
+		}
+		if (options.chartExBinCount !== undefined && (!Number.isInteger(options.chartExBinCount) || options.chartExBinCount < 1)) {
+			console.warn('Warning: chart.chartExBinCount must be a positive integer.')
+			delete options.chartExBinCount
+		}
+		if (options.chartExBinSize !== undefined && (isNaN(options.chartExBinSize) || options.chartExBinSize <= 0)) {
+			console.warn('Warning: chart.chartExBinSize must be greater than 0.')
+			delete options.chartExBinSize
+		}
+		if (options.chartExParentLabels && !['none', 'overlapping', 'banner'].includes(options.chartExParentLabels)) {
+			console.warn('Warning: chart.chartExParentLabels options: `none`, `overlapping`, `banner`.')
+			delete options.chartExParentLabels
+		}
+	}
+
 	// STEP 4: Set props (_type already set to chart on the literal above).
 	// The chart object stores the position/placeholder that gen-xml reads; chart `fill`
 	// is a color string (vs ObjectOptions' ShapeFillProps) and is never read here, so it
@@ -411,14 +469,17 @@ export function addChartDefinition(target: PresSlide | SlideLayout, type: CHART_
 	resultObject.chartRid = getNewRelId(target)
 
 	// STEP 5: Add this chart to this Slide Rels (rId/rels count spans all slides! Count all images to get next rId)
+	// ChartEx charts are a separate part type with their own content type and relationship type,
+	// so the file name is what every downstream emitter keys off (see `xml/package.ts`)
+	const fileName = isChartexType(options._type) ? `chartEx${chartId}.xml` : `chart${chartId}.xml`
 	target._relsChart.push({
 		rId: getNewRelId(target),
 		data: tmpData,
 		opts: options,
 		type: options._type,
 		globalId: chartId,
-		fileName: `chart${chartId}.xml`,
-		Target: `/ppt/charts/chart${chartId}.xml`,
+		fileName,
+		Target: `/ppt/charts/${fileName}`,
 	})
 
 	target._slideObjects.push(resultObject)

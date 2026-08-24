@@ -40,7 +40,67 @@ export const AXIS_ID_SERIES_PRIMARY = '2094734556'
 export type JSZIP_OUTPUT_TYPE = 'arraybuffer' | 'base64' | 'binarystring' | 'blob' | 'nodebuffer' | 'uint8array'
 export type WRITE_OUTPUT_TYPE = JSZIP_OUTPUT_TYPE | 'STREAM'
 export type CHART_NAME = 'area' | 'bar' | 'bar3D' | 'bubble' | 'bubble3D' | 'doughnut' | 'line' | 'pie' | 'radar' | 'scatter'
+/** PowerPoint 2016+ chart types; emitted as a `cx:chartSpace` part (MS-ODRAWXML 2.1) rather than ECMA-376 `c:chartSpace` */
+export type CHARTEX_NAME = 'boxWhisker' | 'funnel' | 'histogram' | 'sunburst' | 'treemap' | 'waterfall'
 export type SCHEME_COLORS = 'tx1' | 'tx2' | 'bg1' | 'bg2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6'
+
+/**
+ * Chart style and chart colour-style parts (MS-ODRAWXML)
+ * - verified against Microsoft's own `ChartStylePart`/`ChartColorStylePart` definitions in
+ *   dotnet/Open-XML-SDK, cross-checked against LibreOffice, rubyXL and OpenXLSX
+ * - note the asymmetry: the namespace is dated 2012, the relationships 2011. That is correct.
+ */
+export const CHART_STYLE = Object.freeze({
+	ns: 'http://schemas.microsoft.com/office/drawing/2012/chartStyle',
+	styleContentType: 'application/vnd.ms-office.chartstyle+xml',
+	colorsContentType: 'application/vnd.ms-office.chartcolorstyle+xml',
+	styleRelType: 'http://schemas.microsoft.com/office/2011/relationships/chartStyle',
+	colorsRelType: 'http://schemas.microsoft.com/office/2011/relationships/chartColorStyle',
+})
+
+/**
+ * ChartEx (PowerPoint 2016+) package contract - MS-ODRAWXML 2.1.
+ *
+ * These chart types have no ECMA-376 representation: they live in their own `cx:chartSpace` part with a
+ * Microsoft content type and relationship type, and the slide-level `p:graphicFrame` must sit inside an
+ * `mc:AlternateContent` so consumers that predate them still get a fallback.
+ *
+ * The `requires` namespace is the schema generation a consumer must understand before it may take the
+ * `mc:Choice`; funnel arrived a revision after the 2016 launch set, so it gates on a later one.
+ */
+export const OOXML_CHARTEX = {
+	/** `cx` - the chartex part's own namespace, and the `a:graphicData@uri` that identifies the frame */
+	ns: 'http://schemas.microsoft.com/office/drawing/2014/chartex',
+	partContentType: 'application/vnd.ms-office.chartex+xml',
+	relType: 'http://schemas.microsoft.com/office/2014/relationships/chartEx',
+	/** `mc:Choice@Requires` namespace for the Office 2016 launch layouts */
+	requires2016: 'http://schemas.microsoft.com/office/drawing/2015/9/8/chartex',
+	/** `mc:Choice@Requires` namespace for funnel, which shipped a schema revision later */
+	requiresFunnel: 'http://schemas.microsoft.com/office/drawing/2015/10/21/chartex',
+} as const
+
+/** `cx:series@layoutId` per chart type - a histogram is a `clusteredColumn` layout carrying `cx:binning` */
+export const CHARTEX_LAYOUT_ID: Record<CHARTEX_NAME, string> = {
+	boxWhisker: 'boxWhisker',
+	funnel: 'funnel',
+	histogram: 'clusteredColumn',
+	sunburst: 'sunburst',
+	treemap: 'treemap',
+	waterfall: 'waterfall',
+}
+
+/**
+ * `mc:Choice@Requires` namespace gating a chartex chart type
+ * - funnel arrived a schema revision after the 2016 launch layouts, so it gates on a later generation
+ */
+export function chartExRequiresNs (chartType: unknown): string {
+	return chartType === 'funnel' ? OOXML_CHARTEX.requiresFunnel : OOXML_CHARTEX.requires2016
+}
+
+/** True when `type` is emitted through the chartex pipeline rather than the ECMA-376 one */
+export function isChartexType (type: unknown): type is CHARTEX_NAME {
+	return typeof type === 'string' && Object.prototype.hasOwnProperty.call(CHARTEX_LAYOUT_ID, type)
+}
 
 /**
  * Slide transition type.
@@ -183,6 +243,12 @@ export enum ChartType {
 	'pie' = 'pie',
 	'radar' = 'radar',
 	'scatter' = 'scatter',
+	'boxWhisker' = 'boxWhisker',
+	'funnel' = 'funnel',
+	'histogram' = 'histogram',
+	'sunburst' = 'sunburst',
+	'treemap' = 'treemap',
+	'waterfall' = 'waterfall',
 }
 export enum ShapeType {
 	'accentBorderCallout1' = 'accentBorderCallout1',
@@ -784,13 +850,19 @@ export enum CHART_TYPE {
 	'AREA' = 'area',
 	'BAR' = 'bar',
 	'BAR3D' = 'bar3D',
+	'BOX_WHISKER' = 'boxWhisker',
 	'BUBBLE' = 'bubble',
 	'BUBBLE3D' = 'bubble3D',
 	'DOUGHNUT' = 'doughnut',
+	'FUNNEL' = 'funnel',
+	'HISTOGRAM' = 'histogram',
 	'LINE' = 'line',
 	'PIE' = 'pie',
 	'RADAR' = 'radar',
 	'SCATTER' = 'scatter',
+	'SUNBURST' = 'sunburst',
+	'TREEMAP' = 'treemap',
+	'WATERFALL' = 'waterfall',
 }
 
 export enum SCHEME_COLOR_NAMES {

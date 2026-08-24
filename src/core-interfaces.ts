@@ -3,7 +3,7 @@
  * PptxGenJS Interfaces
  */
 
-import { CHART_NAME, PLACEHOLDER_TYPE, SHAPE_NAME, SLIDE_OBJECT_TYPES, TEXT_HALIGN, TEXT_VALIGN, TRANSITION_TYPE, WRITE_OUTPUT_TYPE } from './core-enums'
+import { CHART_NAME, CHARTEX_NAME, PLACEHOLDER_TYPE, SHAPE_NAME, SLIDE_OBJECT_TYPES, TEXT_HALIGN, TEXT_VALIGN, TRANSITION_TYPE, WRITE_OUTPUT_TYPE } from './core-enums'
 
 // Core Types
 // ==========
@@ -2524,6 +2524,64 @@ export interface IChartPropsChartRadar {
 	 */
 	radarStyle?: 'standard' | 'marker' | 'filled' // TODO: convert to 'radar'|'markers'|'filled' in 4.0 (verbatim with PPT app UI)
 }
+/**
+ * Options for the PowerPoint 2016+ chartex layouts (waterfall, funnel, treemap, sunburst, histogram,
+ * box & whisker). Each is ignored by every other chart type.
+ * @see MS-ODRAWXML 2.1
+ */
+export interface IChartPropsChartEx {
+	/**
+	 * MS-PPT > Chart Type > Histogram > Format Axis > "Number of bins"
+	 * - fixed bin count; ignored when `chartExBinSize` is set
+	 * - omit both to let PowerPoint choose the bins
+	 * @example 8
+	 */
+	chartExBinCount?: number
+	/**
+	 * MS-PPT > Chart Type > Histogram > Format Axis > "Bin width"
+	 * - fixed bin width, in value-axis units; takes precedence over `chartExBinCount`
+	 * @example 5
+	 */
+	chartExBinSize?: number
+	/**
+	 * MS-PPT > Chart Type > Box & Whisker > Format Data Series > "Show mean line"
+	 * @default false
+	 */
+	chartExMeanLine?: boolean
+	/**
+	 * MS-PPT > Chart Type > Treemap > Format Data Series > "Treemap Label Options"
+	 * - how a parent category label is drawn over its children
+	 * @default overlapping
+	 */
+	chartExParentLabels?: 'none' | 'overlapping' | 'banner'
+	/**
+	 * MS-PPT > Chart Type > Waterfall > "Set as Total"
+	 * - zero-based indexes of the data points drawn as absolute totals rather than deltas
+	 * @example [0, 4] // first and fifth bars are totals
+	 */
+	chartExSubtotals?: number[]
+}
+/**
+ * Chart colour style (`cs:colorStyle` in `ppt/charts/colorsN.xml`)
+ * - the palette PowerPoint's Change Colors gallery offers for the chart
+ */
+export interface ChartColorStyleProps {
+	/**
+	 * How the palette is walked
+	 * @default cycle
+	 */
+	method?: 'cycle' | 'withinLinear' | 'acrossLinear' | 'withinLinearReversed' | 'acrossLinearReversed'
+	/**
+	 * Which entry of the Change Colors gallery is selected
+	 * @default 10
+	 */
+	id?: number
+	/**
+	 * The palette itself
+	 * @default the theme's six accent colours
+	 */
+	colors?: Color[]
+}
 export interface IChartPropsDataLabel {
 	dataLabelBkgrdColors?: boolean
 	dataLabelColor?: string
@@ -2595,6 +2653,7 @@ export interface IChartOpts
 	IChartPropsBase,
 	IChartPropsChartBar,
 	IChartPropsChartDoughnut,
+	IChartPropsChartEx,
 	IChartPropsChartLine,
 	IChartPropsChartPie,
 	IChartPropsChartRadar,
@@ -2611,6 +2670,20 @@ export interface IChartOpts
 	 */
 	altText?: string
 	/**
+	 * Which entry of PowerPoint's Chart Styles gallery is selected (`cs:chartStyle@id`)
+	 * - the style *definitions* written are Office's defaults regardless of this id, so it selects
+	 *   the gallery entry rather than changing the formatting
+	 * - opt-in for classic `c:chart` parts; ChartEx layouts always emit style/colors parts
+	 * @default 201
+	 */
+	chartStyle?: number
+	/**
+	 * Chart colour style (`ppt/charts/colorsN.xml`)
+	 * - distinct from `chartColors`, which sets the series colours directly on the chart
+	 * - opt-in for classic `c:chart` parts; ChartEx layouts always emit style/colors parts
+	 */
+	chartColorStyle?: ChartColorStyleProps
+	/**
 	 * Animation configuration
 	 * - Can be a simple animation name or full configuration object
 	 * @example 'fadein'
@@ -2623,10 +2696,10 @@ export interface IChartOpts
 	designPr?: DesignerProps
 }
 export interface IChartOptsLib extends IChartOpts {
-	_type?: CHART_NAME | IChartMulti[] // TODO: v3.4.0 - move to `IChartOpts`, remove `IChartOptsLib`
+	_type?: CHART_NAME | CHARTEX_NAME | IChartMulti[] // TODO: v3.4.0 - move to `IChartOpts`, remove `IChartOptsLib`
 }
 export interface ISlideRelChart extends OptsChartData {
-	type: CHART_NAME | IChartMulti[]
+	type: CHART_NAME | CHARTEX_NAME | IChartMulti[]
 	opts: IChartOptsLib
 	data: IOptsChartData[]
 	// internal below
@@ -2938,7 +3011,7 @@ export interface PresSlide extends SlideBaseProps {
 	_slideLayout: SlideLayout
 	_slideId: number
 
-	addChart: (type: CHART_NAME | IChartMulti[], data: IOptsChartData[], options?: IChartOpts) => PresSlide
+	addChart: (type: CHART_NAME | CHARTEX_NAME | IChartMulti[], data: IOptsChartData[], options?: IChartOpts) => PresSlide
 	addImage: (options: ImageProps) => PresSlide
 	addMedia: (options: MediaProps) => PresSlide
 	addNotes: (notes: string) => PresSlide
