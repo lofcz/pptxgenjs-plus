@@ -109,12 +109,79 @@ export interface BackgroundProps extends DataOrPathProps, ShapeFillProps {
  * @example 'FF3399'
  */
 export type HexColor = string
-export type ThemeColor = 'tx1' | 'tx2' | 'bg1' | 'bg2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6'
+export type ThemeColor =
+	| 'tx1' | 'tx2' | 'bg1' | 'bg2'
+	| 'dk1' | 'lt1' | 'dk2' | 'lt2'
+	| 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6'
+	| 'hlink' | 'folHlink' | 'phClr'
+/** Every `a:schemeClr@val` slot (ECMA-376 20.1.10.51 ST_SchemeColorVal) */
+export type SchemeColorValue = ThemeColor
 /**
- * Color value: hex RGB, scheme token, or a scheme/hex color with OOXML transforms
- * (selective port of rafalBujok/define_color_theme + allow_modified_color_theme)
+ * Color value: hex RGB, scheme token, `ModifiedThemeColor`, or a DrawingML color object
+ * (`{ hex }`, `{ scheme }`, `{ system }`, `{ preset }`, `{ hsl }`, `{ scrgb }`)
  */
-export type Color = HexColor | ThemeColor | ModifiedThemeColor
+export type Color = HexColor | ThemeColor | ModifiedThemeColor | ColorProps
+/**
+ * Color transforms on a `ColorProps` object (ECMA-376 20.1.2.3, `EG_ColorTransform`)
+ * - `tint`/`shade`/`alpha` are 0-100; `*Off` are -100-100; `*Mod` are unbounded scales
+ * - `hueOff` is in degrees
+ */
+export interface ColorTransformProps {
+	/** lighten toward white (percent) */
+	tint?: number
+	/** darken toward black (percent) */
+	shade?: number
+	/** opacity (percent); 100 is opaque */
+	alpha?: number
+	/** shift opacity (percent, -100 to 100) */
+	alphaOff?: number
+	/** scale opacity (percent) */
+	alphaMod?: number
+	/** scale luminance (percent) */
+	lumMod?: number
+	/** shift luminance (percent, -100 to 100) */
+	lumOff?: number
+	/** scale saturation (percent) */
+	satMod?: number
+	/** shift saturation (percent, -100 to 100) */
+	satOff?: number
+	/** scale hue (percent) */
+	hueMod?: number
+	/** shift hue (degrees, -360 to 360) */
+	hueOff?: number
+	/** use the complement */
+	complement?: boolean
+	/** use the inverse */
+	inverse?: boolean
+	/** convert to grayscale */
+	grayscale?: boolean
+	/** apply gamma */
+	gamma?: boolean
+	/** apply inverse gamma */
+	inverseGamma?: boolean
+}
+/**
+ * A color given as an object so the non-hex DrawingML color kinds are reachable
+ * - exactly one specification field identifies the color; that is what distinguishes a color
+ *   object from a fill object at runtime
+ * @example { hex: 'FF0000', alpha: 50 }
+ * @example { scheme: 'accent1', lumMod: 60, lumOff: 40 }
+ * @example { preset: 'cornflowerBlue' }
+ * @example { hsl: { hue: 210, sat: 80, lum: 50 }, shade: 25 }
+ */
+export type ColorProps =
+	/** 6-digit hex (`a:srgbClr`) */
+	| ({ hex: HexColor } & ColorTransformProps)
+	/** theme slot (`a:schemeClr`) */
+	| ({ scheme: SchemeColorValue } & ColorTransformProps)
+	/** system color such as `windowText`, with an optional last-known value (`a:sysClr`) */
+	| ({ system: string, lastColor?: HexColor } & ColorTransformProps)
+	/** one of the 140 preset color names (`a:prstClr`) */
+	| ({ preset: string } & ColorTransformProps)
+	/** hue/saturation/luminance; hue in degrees, the rest percent (`a:hslClr`) */
+	| ({ hsl: { hue: number, sat: number, lum: number } } & ColorTransformProps)
+	/** linear-gamma RGB percentages (`a:scrgbClr`) */
+	| ({ scrgb: { r: number, g: number, b: number } } & ColorTransformProps)
 export type Margin = number | [number, number, number, number]
 export type HAlign = 'left' | 'center' | 'right' | 'justify'
 export type VAlign = 'top' | 'middle' | 'bottom'
@@ -878,6 +945,8 @@ export interface ShapeGradientProps {
 	 */
 	stops: ShapeGradientStopProps[]
 }
+/** ECMA-376 ST_LineEndWidth / ST_LineEndLength */
+export type LineArrowSize = 'sm' | 'med' | 'lg'
 export interface ShapeLineProps extends ShapeFillProps {
 	/**
 	 * Line width (pt)
@@ -936,8 +1005,36 @@ export interface ShapeLineProps extends ShapeFillProps {
 	_sourceName?: string
 	/** `objectName` of the end shape (resolved to `targetId` at emit) @internal */
 	_targetName?: string
-	// FUTURE: beginArrowSize (1-9)
-	// FUTURE: endArrowSize (1-9)
+	/**
+	 * Compound line type (`a:ln@cmpd`)
+	 * @default 'sng'
+	 */
+	compound?: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
+	/**
+	 * How line segments join at a corner (`a:round` / `a:bevel` / `a:miter`)
+	 */
+	join?: 'round' | 'bevel' | 'miter'
+	/**
+	 * `join: 'miter'` only: how far the miter may extend, as a percent of line width (`a:miter@lim`)
+	 * @default 800
+	 */
+	miterLimit?: number
+	/**
+	 * Custom dash pattern (`a:custDash`), overriding `dashType`
+	 * - each stop is a dash length and the gap after it, as a percent of line width
+	 * @example [{ dash: 400, space: 300 }, { dash: 100, space: 300 }]
+	 */
+	custDash?: Array<{ dash: number, space: number }>
+	/**
+	 * Arrow head size (`a:headEnd@w` / `@len`)
+	 * - `beginArrowType` selects the shape; this sizes it
+	 * - a string applies to both width and length
+	 */
+	beginArrowSize?: LineArrowSize | { width?: LineArrowSize, length?: LineArrowSize }
+	/**
+	 * Arrow tail size (`a:tailEnd@w` / `@len`)
+	 */
+	endArrowSize?: LineArrowSize | { width?: LineArrowSize, length?: LineArrowSize }
 
 	/**
 	 * Dash type
@@ -1112,6 +1209,11 @@ export interface TextBaseProps {
 	 * @example 'Arial'
 	 */
 	fontFaceCs?: string
+	/**
+	 * Symbol typeface (`a:sym`), for Wingdings-style glyphs
+	 * @example 'Wingdings'
+	 */
+	fontFaceSym?: string
 	/**
 	 * Gradient text fill (`a:gradFill` on `a:rPr`). When set, overrides solid `color`.
 	 * @example { type:'linear', angle:45, stops:[{ pos:0, color:'FF0000' }, { pos:100, color:'0000FF' }] }
@@ -2421,7 +2523,106 @@ export type TextFieldType =
 	| 'datetime8' | 'datetime9' | 'datetime10' | 'datetime11' | 'datetime12' | 'datetime13'
 	| 'headerfooter' | 'hdr' | 'ftr'
 
-export interface TextPropsOptions extends PositionProps, DataOrPathProps, TextBaseProps, ObjectNameProps, AppearOnClickProps, NvPrExtensionProps {
+/**
+ * Text-body attributes beyond wrap/insets/anchor (`a:bodyPr`, ECMA-376 21.1.2.1.1)
+ * - omitted unless set, so default output does not change
+ * - overflow uses the existing `vertOverflow` / `horzOverflow` options
+ */
+export interface TextBodyProps {
+	/**
+	 * Keep text upright when the shape is rotated (`a:bodyPr@upright`)
+	 * @default false
+	 */
+	upright?: boolean
+	/**
+	 * Rotate the text body independently of the shape, in degrees (`a:bodyPr@rot`)
+	 * - distinct from the shape's own `rotate`
+	 */
+	textRotate?: number
+	/**
+	 * Center the anchor point as well as the text (`a:bodyPr@anchorCtr`)
+	 * @default false
+	 */
+	anchorCtr?: boolean
+	/**
+	 * Respect paragraph spacing before the first and after the last line (`a:bodyPr@spcFirstLastPara`)
+	 * @default false
+	 */
+	spcFirstLastPara?: boolean
+	/**
+	 * Use legacy line-spacing rules (`a:bodyPr@compatLnSpc`)
+	 * @default false
+	 */
+	compatLnSpc?: boolean
+	/**
+	 * Force anti-aliasing regardless of size (`a:bodyPr@forceAA`)
+	 * @default false
+	 */
+	forceAA?: boolean
+}
+/**
+ * Paragraph attributes beyond margins/alignment (`a:pPr`, ECMA-376 21.1.2.2.7)
+ */
+export interface ParagraphProps {
+	/**
+	 * Right margin in inches (`a:pPr@marR`)
+	 */
+	marR?: number
+	/**
+	 * Default tab stop interval in inches (`a:pPr@defTabSz`)
+	 */
+	defTabSz?: number
+	/**
+	 * Baseline alignment of glyphs within the line (`a:pPr@fontAlgn`)
+	 */
+	fontAlgn?: 'auto' | 't' | 'ctr' | 'base' | 'b'
+	/**
+	 * Apply East Asian line-breaking rules (`a:pPr@eaLnBrk`)
+	 * - schema default is true; written only when turned off
+	 * @default true
+	 */
+	eaLnBrk?: boolean
+	/**
+	 * Allow Latin words to break across lines (`a:pPr@latinLnBrk`)
+	 * - schema default is true; written only when turned off
+	 * @default true
+	 */
+	latinLnBrk?: boolean
+	/**
+	 * Apply hanging punctuation (`a:pPr@hangingPunct`)
+	 * - schema default is true; written only when turned off
+	 * @default true
+	 */
+	hangingPunct?: boolean
+}
+/**
+ * Run attributes beyond bold/italic/size (`a:rPr`, ECMA-376 21.1.2.3.9)
+ * - `caps` lives on `TextPropsOptions` (already present)
+ */
+export interface TextRunProps {
+	/**
+	 * Normalise glyph heights (`a:rPr@normalizeH`)
+	 * @default false
+	 */
+	normalizeH?: boolean
+	/**
+	 * Exclude the run from spelling and grammar checking (`a:rPr@noProof`)
+	 * @default false
+	 */
+	noProof?: boolean
+	/**
+	 * Mark the run as needing re-inspection (`a:rPr@dirty`)
+	 * - previously hardcoded to `0`
+	 * @default false
+	 */
+	dirty?: boolean
+	/**
+	 * Underline line properties (`a:uLn`), distinct from the underline colour
+	 * - pass `'text'` to follow the run's own line (`a:uLnTx`)
+	 */
+	underlineLine?: 'text' | ShapeLineProps
+}
+export interface TextPropsOptions extends PositionProps, DataOrPathProps, TextBaseProps, ObjectNameProps, AppearOnClickProps, NvPrExtensionProps, TextBodyProps, ParagraphProps, TextRunProps {
 	_bodyProp?: {
 		// Note: Many of these duplicated as user options are transformed to _bodyProp options for XML processing
 		autoFit?: boolean

@@ -1361,6 +1361,7 @@ export function addShapeDefinition(target: PresSlide | SlideLayout, shapeName: S
 	// 1: ShapeLineProps defaults
 	const hasConnectorEnds = options.line.sourceId != null || options.line.targetId != null
 	const newLineOpts: ShapeLineProps = {
+		...options.line,
 		type: options.line.type || (options.line.gradient ? 'gradient' : 'solid'),
 		color: options.line.color || DEF_SHAPE_LINE_COLOR,
 		transparency: options.line.transparency || 0,
@@ -1753,6 +1754,7 @@ export function addTextDefinition(target: PresSlide | SlideLayout, text: TextPro
 			if (itemOpts.shape === SHAPE_TYPE.LINE) {
 				// ShapeLineProps defaults
 				const newLineOpts: ShapeLineProps = {
+					...itemOpts.line,
 					type: itemOpts.line?.type || (itemOpts.line?.gradient ? 'gradient' : 'solid'),
 					color: itemOpts.line?.color || DEF_SHAPE_LINE_COLOR,
 					transparency: itemOpts.line?.transparency || 0,

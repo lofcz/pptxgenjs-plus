@@ -781,3 +781,95 @@ test('contract: objects without locks keep the output they always had', async ()
 	assert.match(xml, /<p:cNvPicPr><a:picLocks noChangeAspect="1"\/><\/p:cNvPicPr>/, 'default picture lock changed')
 	assert.match(xml, /<a:graphicFrameLocks noGrp="1"\/>/, 'default frame lock changed')
 })
+
+test('contract: the remaining a:bodyPr, a:pPr, and a:rPr attributes are reachable', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addText('all the attributes', {
+		x: 1, y: 1, w: 4, h: 2,
+		upright: true, textRotate: 15, anchorCtr: true, spcFirstLastPara: true,
+		compatLnSpc: true, forceAA: true,
+		marR: 0.25, defTabSz: 0.5, fontAlgn: 'ctr',
+		eaLnBrk: false, latinLnBrk: false, hangingPunct: false,
+		caps: 'small', normalizeH: true, noProof: true, dirty: true,
+		fontFace: 'Georgia', fontFaceEa: 'MS Gothic', fontFaceCs: 'Arial', fontFaceSym: 'Wingdings',
+		underlineLine: { width: 1.5, color: 'FF0000', dashType: 'dash' },
+	})
+	const attrZip = await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer)
+	await assertPptxPackageContracts(attrZip)
+	const xml = await readPart(attrZip, 'ppt/slides/slide1.xml')
+
+	assert.doesNotMatch(xml, /NaN|undefined/, 'attributes must not leak invalid values')
+	assert.match(xml, /<a:bodyPr wrap="square" upright="1" rot="900000" anchorCtr="1" spcFirstLastPara="1" compatLnSpc="1" forceAA="1"/, 'bodyPr attributes missing')
+	assert.match(xml, /<a:pPr marR="228600" defTabSz="457200" fontAlgn="ctr" eaLnBrk="0" latinLnBrk="0" hangingPunct="0"/, 'pPr attributes missing')
+	assert.match(xml, /<a:rPr lang="en-US" cap="small" normalizeH="1" noProof="1" dirty="1">/, 'rPr attributes missing')
+	assert.match(xml, /<a:latin typeface="Georgia"[^>]*\/><a:ea typeface="MS Gothic"[^>]*\/><a:cs typeface="Arial"[^>]*\/><a:sym typeface="Wingdings"\/>/, 'per-script fonts or sym missing')
+	assert.match(xml, /<a:uLn w="19050"><a:solidFill><a:srgbClr val="FF0000"\/><\/a:solidFill><a:prstDash val="dash"\/><\/a:uLn>/, 'uLn missing')
+})
+
+test('contract: rPr children follow the schema sequence', async () => {
+	const pptx = new pptxgen()
+	pptx.addSlide().addText([{
+		text: 'ordered',
+		options: {
+			outline: { size: 1, color: '000000' },
+			color: 'FF0000',
+			// glow on the run itself (shape-level glow lives on effectLst, issue #84)
+			glow: { size: 4, color: 'FFFF00', opacity: 0.5 },
+			highlight: '00FF00',
+			underline: { style: 'sng', color: '0000FF' },
+			underlineLine: 'text',
+			fontFace: 'Arial',
+			fontFaceSym: 'Wingdings',
+		},
+	}], { x: 1, y: 1, w: 4, h: 1 })
+	const xml = await readPart(await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer), 'ppt/slides/slide1.xml')
+
+	const order = ['a:ln', 'a:solidFill', 'a:effectLst', 'a:highlight', 'a:uLnTx', 'a:uFill', 'a:latin', 'a:ea', 'a:cs', 'a:sym']
+	const rPr = /<a:rPr[^>]*>[\s\S]*?<\/a:rPr>/.exec(xml)?.[0] ?? ''
+	assert.ok(rPr, 'rPr not found')
+	const positions = order.map(tag => ({ tag, at: rPr.indexOf(`<${tag}`) }))
+	positions.forEach(entry => { assert.ok(entry.at > -1, `${entry.tag} missing from rPr`) })
+	positions.reduce((prev, entry) => {
+		assert.ok(entry.at > prev.at, `${entry.tag} must follow ${prev.tag} in CT_TextCharacterProperties`)
+		return entry
+	})
+})
+
+test('contract: text without the new attributes is unchanged', async () => {
+	const pptx = new pptxgen()
+	pptx.addSlide().addText('plain', { x: 1, y: 1, w: 3, h: 1 })
+	const xml = await readPart(await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer), 'ppt/slides/slide1.xml')
+
+	assert.match(xml, /<a:bodyPr wrap="square" rtlCol="0" anchor="ctr">/, 'default bodyPr changed')
+	assert.match(xml, /<a:rPr lang="en-US" dirty="0">/, 'default rPr changed - `dirty` must stay 0')
+	assert.doesNotMatch(xml, /upright|rot=|anchorCtr|spcFirstLastPara|compatLnSpc|forceAA/, 'no new bodyPr attribute may appear unasked')
+	assert.doesNotMatch(xml, /marR=|defTabSz=|fontAlgn=|eaLnBrk=|latinLnBrk=|hangingPunct=/, 'no pPr attribute may appear unasked')
+	assert.doesNotMatch(xml, /cap=|normalizeH|noProof|a:uLn|a:sym/, 'no rPr attribute may appear unasked')
+})
+
+test('contract: line compound, join, custDash, and arrow size reach a:ln', async () => {
+	const pptx = new pptxgen()
+	pptx.addSlide().addShape(pptx.ShapeType.line, {
+		x: 1, y: 1, w: 3, h: 0,
+		line: {
+			color: '000000',
+			width: 2,
+			compound: 'dbl',
+			join: 'miter',
+			miterLimit: 400,
+			custDash: [{ dash: 200, space: 100 }],
+			beginArrowType: 'arrow',
+			beginArrowSize: { width: 'lg', length: 'sm' },
+			endArrowType: 'triangle',
+			endArrowSize: 'med',
+		},
+	})
+	const xml = await readPart(await JSZip.loadAsync((await pptx.write({ outputType: 'nodebuffer' })) as Buffer), 'ppt/slides/slide1.xml')
+	assert.match(xml, /<a:ln w="25400" cmpd="dbl">/, 'compound missing')
+	assert.match(xml, /<a:custDash><a:ds d="200000" sp="100000"\/><\/a:custDash>/, 'custDash missing')
+	assert.match(xml, /<a:miter lim="400000"\/>/, 'miter join missing')
+	assert.match(xml, /<a:headEnd type="arrow" w="lg" len="sm"\/>/, 'beginArrowSize missing')
+	assert.match(xml, /<a:tailEnd type="triangle" w="med" len="med"\/>/, 'endArrowSize string form missing')
+	assert.doesNotMatch(xml, /<a:prstDash/, 'custDash must replace prstDash')
+})

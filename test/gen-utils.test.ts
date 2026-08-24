@@ -35,6 +35,8 @@ import {
 	utf8ToBase64,
 } from '../src/gen-utils'
 import { PresLayout, PresSlide, ShadowProps } from '../src/core-interfaces'
+import { DEF_FONT_COLOR } from '../src/core-enums'
+import { genXmlLine } from '../src/xml/line'
 
 // 10in x 7.5in layout expressed in EMU
 const LAYOUT = { name: 'TEST', width: 9144000, height: 6858000 } as PresLayout
@@ -424,6 +426,118 @@ function listBrowserSrcFiles (dir: string): string[] {
 	}
 	return out
 }
+
+test('createColorElement: ColorProps object forms', () => {
+	assert.equal(createColorElement({ hex: 'FF0000' }), '<a:srgbClr val="FF0000"/>')
+	assert.equal(createColorElement({ scheme: 'accent1' }), '<a:schemeClr val="accent1"/>')
+	assert.equal(createColorElement({ scheme: 'hlink' }), '<a:schemeClr val="hlink"/>')
+	assert.equal(createColorElement({ scheme: 'folHlink' }), '<a:schemeClr val="folHlink"/>')
+	assert.equal(createColorElement({ scheme: 'phClr' }), '<a:schemeClr val="phClr"/>')
+	assert.equal(createColorElement({ scheme: 'dk1' }), '<a:schemeClr val="dk1"/>')
+	assert.equal(createColorElement({ system: 'windowText' }), '<a:sysClr val="windowText"/>')
+	assert.equal(createColorElement({ system: 'windowText', lastColor: '#000000' }), '<a:sysClr val="windowText" lastClr="000000"/>')
+	assert.equal(createColorElement({ preset: 'cornflowerBlue' }), '<a:prstClr val="cornflowerBlue"/>')
+	assert.equal(createColorElement({ hsl: { hue: 210, sat: 80, lum: 50 } }), '<a:hslClr hue="12600000" sat="80000" lum="50000"/>')
+	assert.equal(createColorElement({ scrgb: { r: 100, g: 50, b: 0 } }), '<a:scrgbClr r="100000" g="50000" b="0"/>')
+	// string form of the extra scheme slots
+	assert.equal(createColorElement('dk1'), '<a:schemeClr val="dk1"/>')
+	assert.equal(createColorElement('hlink'), '<a:schemeClr val="hlink"/>')
+})
+
+test('createColorElement: ColorProps transforms and their unit ranges', () => {
+	assert.equal(createColorElement({ hex: 'FF0000', alpha: 50 }), '<a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr>')
+	assert.equal(createColorElement({ scheme: 'accent1', lumMod: 60, lumOff: 40 }), '<a:schemeClr val="accent1"><a:lumMod val="60000"/><a:lumOff val="40000"/></a:schemeClr>')
+	assert.equal(createColorElement({ scheme: 'accent1', satMod: 170 }), '<a:schemeClr val="accent1"><a:satMod val="170000"/></a:schemeClr>')
+	assert.equal(createColorElement({ hex: '00FF00', lumOff: -25, satOff: 200 }), '<a:srgbClr val="00FF00"><a:satOff val="100000"/><a:lumOff val="-25000"/></a:srgbClr>')
+	assert.equal(createColorElement({ hex: '00FF00', hueOff: -30 }), '<a:srgbClr val="00FF00"><a:hueOff val="-1800000"/></a:srgbClr>')
+	assert.equal(createColorElement({ hex: '00FF00', inverse: true, grayscale: true, complement: true, gamma: true, inverseGamma: true }),
+		'<a:srgbClr val="00FF00"><a:inv/><a:gray/><a:comp/><a:gamma/><a:invGamma/></a:srgbClr>')
+	assert.equal(createColorElement({ hex: '00FF00', alpha: 150, tint: -20 }), '<a:srgbClr val="00FF00"><a:tint val="0"/><a:alpha val="100000"/></a:srgbClr>')
+})
+
+test('createColorElement: unknown ColorProps names fall back rather than emit invalid enums', () => {
+	const orig = console.warn
+	const warnings: string[] = []
+	console.warn = (msg: string) => warnings.push(String(msg))
+	try {
+		assert.equal(createColorElement({ scheme: 'nope' as unknown as 'accent1' }), `<a:srgbClr val="${DEF_FONT_COLOR}"/>`)
+		assert.equal(createColorElement({ system: 'chartreuse' }), `<a:srgbClr val="${DEF_FONT_COLOR}"/>`)
+		assert.equal(createColorElement({ preset: 'ultraviolet' }), `<a:srgbClr val="${DEF_FONT_COLOR}"/>`)
+		assert.equal(createColorElement({ hex: 'ZZZ' }), `<a:srgbClr val="${DEF_FONT_COLOR}"/>`)
+		assert.equal(createColorElement({ system: 'windowText', lastColor: 'nope' }), '<a:sysClr val="windowText"/>')
+	} finally {
+		console.warn = orig
+	}
+	assert.equal(warnings.length, 4, 'each rejected name warns once')
+	assert.ok(warnings.some(w => w.includes('is not a theme color slot')))
+	assert.ok(warnings.some(w => w.includes('is not a system color')))
+	assert.ok(warnings.some(w => w.includes('is not a preset color name')))
+})
+
+test('createColorElement: ModifiedThemeColor still works beside ColorProps', () => {
+	assert.equal(
+		createColorElement({ baseColor: 'accent1', tint: 40 }),
+		'<a:schemeClr val="accent1"><a:tint val="40000"/></a:schemeClr>'
+	)
+})
+
+test('genXmlColorSelection: a color object is a solid fill, a fill object is not', () => {
+	assert.equal(genXmlColorSelection({ scheme: 'accent1', lumMod: 75 }), '<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="75000"/></a:schemeClr></a:solidFill>')
+	assert.equal(genXmlColorSelection({ preset: 'gold' }), '<a:solidFill><a:prstClr val="gold"/></a:solidFill>')
+	assert.equal(genXmlColorSelection({ type: 'solid', color: 'FF0000' }), '<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>')
+	assert.equal(genXmlColorSelection({ type: 'solid', color: { scheme: 'accent2', shade: 50 } }), '<a:solidFill><a:schemeClr val="accent2"><a:shade val="50000"/></a:schemeClr></a:solidFill>')
+	assert.equal(genXmlColorSelection({ baseColor: 'accent1', tint: 25 }), '<a:solidFill><a:schemeClr val="accent1"><a:tint val="25000"/></a:schemeClr></a:solidFill>')
+})
+
+test('genXmlLine: preset dash, cap, compound, joins, and arrow sizing', () => {
+	assert.equal(genXmlLine({ width: 2, color: 'FF0000', dashType: 'dash' }),
+		'<a:ln w="25400"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:prstDash val="dash"/></a:ln>')
+	assert.equal(genXmlLine({ width: 2, color: 'FF0000', cap: 'rnd' }),
+		'<a:ln w="25400" cap="rnd"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>')
+	assert.equal(genXmlLine({ width: 3, color: '000000', compound: 'thickThin' }),
+		'<a:ln w="38100" cmpd="thickThin"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>')
+	assert.equal(genXmlLine({ color: '000000', join: 'round' }), '<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:round/></a:ln>')
+	assert.equal(genXmlLine({ color: '000000', join: 'bevel' }), '<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:bevel/></a:ln>')
+	assert.equal(genXmlLine({ color: '000000', join: 'miter', miterLimit: 400 }), '<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:miter lim="400000"/></a:ln>')
+	assert.equal(genXmlLine({ color: '000000', join: 'miter' }), '<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:miter lim="800000"/></a:ln>')
+	assert.equal(genXmlLine({ color: '000000', beginArrowType: 'arrow', beginArrowSize: { width: 'lg', length: 'lg' }, endArrowType: 'triangle', endArrowSize: { width: 'sm' } }),
+		'<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:headEnd type="arrow" w="lg" len="lg"/><a:tailEnd type="triangle" w="sm"/></a:ln>')
+	assert.equal(genXmlLine({ color: '000000', beginArrowType: 'arrow', beginArrowSize: 'med' }),
+		'<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:headEnd type="arrow" w="med" len="med"/></a:ln>')
+})
+
+test('genXmlLine: a custom dash replaces the preset one', () => {
+	assert.equal(genXmlLine({ color: '000000', dashType: 'dash', custDash: [{ dash: 400, space: 300 }, { dash: 100, space: 300 }] }),
+		'<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:custDash><a:ds d="400000" sp="300000"/><a:ds d="100000" sp="300000"/></a:custDash></a:ln>')
+})
+
+test('genXmlLine: the same content model serves a:uLn', () => {
+	assert.equal(genXmlLine({ width: 1, color: 'FF0000', dashType: 'solid' }, 'a:uLn'),
+		'<a:uLn w="12700"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:prstDash val="solid"/></a:uLn>')
+})
+
+test('genXmlLine: invalid line options are dropped with a warning', () => {
+	const orig = console.warn
+	const warnings: string[] = []
+	console.warn = (msg: string) => warnings.push(String(msg))
+	let compound: string
+	let dash: string
+	let join: string
+	try {
+		compound = genXmlLine({ color: '000000', compound: 'quad' as 'sng' })
+		dash = genXmlLine({ color: '000000', custDash: [{ dash: -1, space: 100 }, { dash: 200, space: 100 }] })
+		join = genXmlLine({ color: '000000', join: 'sharp' as 'miter' })
+	} finally {
+		console.warn = orig
+	}
+	assert.ok(warnings.some(w => w.includes('`compound` must be one of')), 'bad compound must warn')
+	assert.ok(warnings.some(w => w.includes('each `custDash` stop needs')), 'bad dash stop must warn')
+	assert.ok(warnings.some(w => w.includes('`join` must be')), 'bad join must warn')
+	assert.doesNotMatch(compound, /cmpd=/, 'an invalid compound must not be emitted')
+	assert.match(dash, /<a:custDash><a:ds d="200000" sp="100000"\/><\/a:custDash>/, 'valid dash stops must survive')
+	assert.doesNotMatch(join, /a:round|a:bevel|a:miter/, 'an invalid join must not be emitted')
+	assert.doesNotMatch(compound + dash + join, /NaN/, 'no NaN attributes')
+})
 
 test('browser-bundled helpers do not reference Buffer', () => {
 	const root = join(dirname(fileURLToPath(import.meta.url)), '..')

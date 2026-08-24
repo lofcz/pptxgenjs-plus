@@ -29,7 +29,8 @@ import { AUTHOR_PART_CONTENT_TYPE, AUTHOR_REL_TYPE, COMMENT_PART_CONTENT_TYPE, C
 import { createColorElement, encodeXmlEntities, genXmlColorSelection, getUuid, inch2Emu, resolveThemeColors } from '../gen-utils'
 import { extPartPackagePath } from './content-parts'
 import { slideCommentsRelId } from './relationships'
-import { genXmlLine, resolveZoomSections, slideObjectToXml } from './slide'
+import { genXmlLine } from './line'
+import { resolveZoomSections, slideObjectToXml } from './slide'
 import { A14_NS, genXmlDesignTagLst, MATH_NS, MC_NS, P14_NS, P1710_NS, URI_DESIGN_TAG_LST } from './text'
 import {
 	CHANGES_INFO_CONTENT_TYPE,

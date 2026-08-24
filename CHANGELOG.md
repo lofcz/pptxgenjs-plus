@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Image `recolor` (`ImageRecolorProps`) for duotone, grayscale, brightness/contrast, bi-level, and color-change on `a:blip` (does not replace SVG `fill` path recolor)
 - Shape/image `styleRef` emits `p:style` (`lnRef`/`fillRef`/`effectRef`/`fontRef`) so theme swaps can restyle objects
 - `slide.addConnector(options)` convenience that maps onto the existing connector fields, with optional `start`/`end` `objectName` glue
+- DrawingML colors accept object forms (`{ hex }`, `{ scheme }`, `{ system }`, `{ preset }`, `{ hsl }`, `{ scrgb }`) in addition to hex strings, theme tokens, and `ModifiedThemeColor`; scheme slots now include `dk1`/`lt1`/`hlink`/`folHlink`/`phClr`
+- Lines emit the rest of `CT_LineProperties`: `compound`, `join`/`miterLimit`, `custDash`, and `beginArrowSize`/`endArrowSize`
+- Text emits remaining `a:bodyPr`/`a:pPr`/`a:rPr` attributes (`upright`, `textRotate`, `anchorCtr`, paragraph line-break flags, `underlineLine`, `fontFaceSym`, …)
 - Text `vertOverflow` / `horzOverflow` emit ECMA-376 `a:bodyPr` overflow attrs so overflowing runs can clip instead of spilling out of the shape
 - Package-contract tests for opt-in `addFont` (Font parts, `application/x-fontdata`, Presentation font rels); default export embeds nothing
 - `pptx.slideShow` emits a spec-valid `p:showPr` with the required present/browse/kiosk choice, plus loop/narration/animation/timing flags

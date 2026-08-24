@@ -4,8 +4,8 @@
 
 import { parseXml } from '@rgrove/parse-xml'
 
-import { EMU, REGEX_HEX_COLOR, DEF_FONT_COLOR, DEF_TEXT_GLOW, ONEPT, SchemeColor, SCHEME_COLORS, TILE_ALIGNMENTS } from './core-enums'
-import { PresLayout, TextGlowProps, PresSlide, SlideLayout, ShapeFillProps, Color, ShapeLineProps, Coord, ShadowProps, ShapeGradientProps, ShapePatternProps, ShapeImageFillProps, ModifiedThemeColor, ThemeProps, HexColor } from './core-interfaces'
+import { DEF_FONT_COLOR, DEF_TEXT_GLOW, EMU, ONEPT, PRESET_COLOR_VALUES, REGEX_HEX_COLOR, SCHEME_COLORS, SCHEME_COLOR_VALUES, SYSTEM_COLOR_VALUES, TILE_ALIGNMENTS } from './core-enums'
+import { Color, ColorProps, ColorTransformProps, Coord, HexColor, ModifiedThemeColor, PresLayout, PresSlide, ShadowProps, ShapeFillProps, ShapeGradientProps, ShapeImageFillProps, ShapeLineProps, ShapePatternProps, SlideLayout, TextGlowProps, ThemeProps } from './core-interfaces'
 
 /** debug namespace, used for both the log prefix and the `NODE_DEBUG` section name */
 const DEBUG_NS = 'pptxgenjs'
@@ -425,6 +425,15 @@ export function isModifiedThemeColor (value: unknown): value is ModifiedThemeCol
 	return typeof value === 'object' && value !== null && 'baseColor' in value
 }
 
+/**
+ * Whether a value is a DrawingML color object rather than a fill object
+ * - the six specification fields are unique to `ColorProps`
+ */
+export function isColorProps (value: unknown): value is ColorProps {
+	if (!value || typeof value !== 'object') return false
+	return ['hex', 'scheme', 'system', 'preset', 'hsl', 'scrgb'].some(key => key in value)
+}
+
 /** Percent-based OOXML color transforms (0-100 → val*1000) */
 const PERCENT_COLOR_MODIFIERS = [
 	'alpha', 'alphaMod', 'alphaOff',
@@ -478,12 +487,96 @@ function handleModifiedColorProps (color: ModifiedThemeColor): string {
  * Thi sis wrong. We s/b calling `genXmlColorSelection()` instead as it returns `<a:solidfill>BLAH</a:solidFill>`!!
  */
 /**
+ * DrawingML stores percentages in 1000ths of a percent
+ * - `CT_PositiveFixedPercentage` (tint, shade, alpha) is 0-100
+ * - `CT_FixedPercentage` (the `*Off` transforms) is -100 to 100
+ * - `CT_PositivePercentage` (the `*Mod` transforms) is a *scale* and is unbounded above
+ */
+function pct (value: number, min = 0, max = 100): string {
+	const clamped = Math.min(max, Math.max(min, isFinite(value) ? value : 0))
+	return String(Math.round(clamped * 1000))
+}
+
+/**
+ * Create the color transform children shared by every ColorProps element (ECMA-376 20.1.2.3)
+ */
+function createColorTransforms (props: ColorTransformProps): string {
+	let xml = ''
+
+	if (typeof props.tint === 'number') xml += `<a:tint val="${pct(props.tint)}"/>`
+	if (typeof props.shade === 'number') xml += `<a:shade val="${pct(props.shade)}"/>`
+	if (props.inverse === true) xml += '<a:inv/>'
+	if (props.grayscale === true) xml += '<a:gray/>'
+	if (typeof props.alpha === 'number') xml += `<a:alpha val="${pct(props.alpha)}"/>`
+	if (typeof props.alphaOff === 'number') xml += `<a:alphaOff val="${pct(props.alphaOff, -100, 100)}"/>`
+	if (typeof props.alphaMod === 'number') xml += `<a:alphaMod val="${pct(props.alphaMod, 0, Number.MAX_SAFE_INTEGER)}"/>`
+	if (typeof props.hueMod === 'number') xml += `<a:hueMod val="${pct(props.hueMod, 0, Number.MAX_SAFE_INTEGER)}"/>`
+	if (typeof props.hueOff === 'number') xml += `<a:hueOff val="${Math.round(Math.min(360, Math.max(-360, isFinite(props.hueOff) ? props.hueOff : 0)) * 60000)}"/>`
+	if (typeof props.satMod === 'number') xml += `<a:satMod val="${pct(props.satMod, 0, Number.MAX_SAFE_INTEGER)}"/>`
+	if (typeof props.satOff === 'number') xml += `<a:satOff val="${pct(props.satOff, -100, 100)}"/>`
+	if (typeof props.lumMod === 'number') xml += `<a:lumMod val="${pct(props.lumMod, 0, Number.MAX_SAFE_INTEGER)}"/>`
+	if (typeof props.lumOff === 'number') xml += `<a:lumOff val="${pct(props.lumOff, -100, 100)}"/>`
+	if (props.complement === true) xml += '<a:comp/>'
+	if (props.gamma === true) xml += '<a:gamma/>'
+	if (props.inverseGamma === true) xml += '<a:invGamma/>'
+
+	return xml
+}
+
+/**
+ * Create the color element for a `ColorProps` object
+ */
+function createColorPropsElement (props: ColorProps, extra: string): string {
+	const inner = createColorTransforms(props) + extra
+	const wrap = (tag: string, attrs: string): string => (inner ? `<a:${tag} ${attrs}>${inner}</a:${tag}>` : `<a:${tag} ${attrs}/>`)
+
+	if ('hex' in props) {
+		const hex = String(props.hex ?? '').replace('#', '')
+		if (!REGEX_HEX_COLOR.test(hex)) {
+			console.warn(`[pptxgenjs] "${hex}" is not a 6-digit hex color - "${DEF_FONT_COLOR}" used instead`)
+			return wrap('srgbClr', `val="${DEF_FONT_COLOR}"`)
+		}
+		return wrap('srgbClr', `val="${hex.toUpperCase()}"`)
+	}
+	if ('scheme' in props) {
+		if (!SCHEME_COLOR_VALUES.has(props.scheme)) {
+			console.warn(`[pptxgenjs] "${String(props.scheme)}" is not a theme color slot - "${DEF_FONT_COLOR}" used instead`)
+			return wrap('srgbClr', `val="${DEF_FONT_COLOR}"`)
+		}
+		return wrap('schemeClr', `val="${props.scheme}"`)
+	}
+	if ('system' in props) {
+		if (!SYSTEM_COLOR_VALUES.has(props.system)) {
+			console.warn(`[pptxgenjs] "${String(props.system)}" is not a system color - "${DEF_FONT_COLOR}" used instead`)
+			return wrap('srgbClr', `val="${DEF_FONT_COLOR}"`)
+		}
+		const last = props.lastColor && REGEX_HEX_COLOR.test(props.lastColor.replace('#', '')) ? ` lastClr="${props.lastColor.replace('#', '').toUpperCase()}"` : ''
+		return wrap('sysClr', `val="${props.system}"${last}`)
+	}
+	if ('preset' in props) {
+		if (!PRESET_COLOR_VALUES.has(props.preset)) {
+			console.warn(`[pptxgenjs] "${String(props.preset)}" is not a preset color name - "${DEF_FONT_COLOR}" used instead`)
+			return wrap('srgbClr', `val="${DEF_FONT_COLOR}"`)
+		}
+		return wrap('prstClr', `val="${props.preset}"`)
+	}
+	if ('hsl' in props) {
+		const hue = Math.round(((((props.hsl.hue % 360) + 360) % 360) || 0) * 60000)
+		return wrap('hslClr', `hue="${isFinite(hue) ? hue : 0}" sat="${pct(props.hsl.sat)}" lum="${pct(props.hsl.lum)}"`)
+	}
+	return wrap('scrgbClr', `r="${pct(props.scrgb.r)}" g="${pct(props.scrgb.g)}" b="${pct(props.scrgb.b)}"`)
+}
+
+/**
  * Create either a `a:schemeClr` - (scheme color) or `a:srgbClr` (hexa representation).
- * @param {Color|SCHEME_COLORS} colorInput - hex, scheme token, or ModifiedThemeColor
+ * Object forms (`ColorProps`, `ModifiedThemeColor`) reach the rest of the DrawingML color model.
+ * @param {Color|SCHEME_COLORS} colorInput - hex, scheme token, ModifiedThemeColor, or ColorProps
  * @param {string} innerElements - additional elements that adjust the color and are enclosed by the color element
  * @returns {string} XML string
  */
 export function createColorElement (colorInput: Color | SCHEME_COLORS | undefined, innerElements?: string): string {
+	if (isColorProps(colorInput)) return createColorPropsElement(colorInput, innerElements ?? '')
+
 	const base = isModifiedThemeColor(colorInput) ? colorInput.baseColor : colorInput
 	const colorStr = typeof base === 'string' ? base : DEF_FONT_COLOR
 	let colorVal = (colorStr || '').replace('#', '')
@@ -493,19 +586,7 @@ export function createColorElement (colorInput: Color | SCHEME_COLORS | undefine
 		kids += handleModifiedColorProps(colorInput)
 	}
 
-	if (
-		!REGEX_HEX_COLOR.test(colorVal) &&
-		colorVal !== SchemeColor.background1 &&
-		colorVal !== SchemeColor.background2 &&
-		colorVal !== SchemeColor.text1 &&
-		colorVal !== SchemeColor.text2 &&
-		colorVal !== SchemeColor.accent1 &&
-		colorVal !== SchemeColor.accent2 &&
-		colorVal !== SchemeColor.accent3 &&
-		colorVal !== SchemeColor.accent4 &&
-		colorVal !== SchemeColor.accent5 &&
-		colorVal !== SchemeColor.accent6
-	) {
+	if (!REGEX_HEX_COLOR.test(colorVal) && !SCHEME_COLOR_VALUES.has(colorVal)) {
 		console.warn(`"${colorVal}" is not a valid scheme color or hex RGB! "${DEF_FONT_COLOR}" used instead. Only provide 6-digit RGB or 'pptx.SchemeColor' values!`)
 		colorVal = DEF_FONT_COLOR
 	}
@@ -680,10 +761,10 @@ export function genXmlColorSelection (props: Color | ShapeFillProps | ShapeLineP
 	let outText = ''
 
 	if (props) {
-		// ModifiedThemeColor as a bare Color value (must not be treated as ShapeFillProps)
+		// A bare color - string, ModifiedThemeColor, or ColorProps - is a solid fill of that color
 		if (typeof props === 'string') {
 			colorVal = props
-		} else if (isModifiedThemeColor(props)) {
+		} else if (isModifiedThemeColor(props) || isColorProps(props)) {
 			colorVal = props
 		} else {
 			if (props.type) fillType = props.type
@@ -693,6 +774,7 @@ export function genXmlColorSelection (props: Color | ShapeFillProps | ShapeLineP
 			if (props.transparency) internalElements += `<a:alpha val="${Math.round((100 - props.transparency) * 1000)}"/>`
 		}
 
+		const isBareColor = typeof props === 'string' || isModifiedThemeColor(props) || isColorProps(props)
 		switch (fillType) {
 			case 'solid':
 				outText += `<a:solidFill>${createColorElement(colorVal, internalElements)}</a:solidFill>`
@@ -700,20 +782,24 @@ export function genXmlColorSelection (props: Color | ShapeFillProps | ShapeLineP
 			case 'gradient':
 			case 'linearGradient':
 				outText += createGradientFillElement(
-					typeof props === 'string' || isModifiedThemeColor(props) ? undefined : resolveGradientProps(props),
+					isBareColor ? undefined : resolveGradientProps(props),
 					colorVal || '',
 					internalElements,
 				)
 				break
 			case 'pattern':
 				outText += createPatternFillElement(
-					typeof props === 'string' || isModifiedThemeColor(props) ? undefined : props.pattern,
-					typeof colorVal === 'string' ? colorVal : String(colorVal.baseColor),
+					isBareColor ? undefined : props.pattern,
+					typeof colorVal === 'string'
+						? colorVal
+						: isModifiedThemeColor(colorVal)
+							? String(colorVal.baseColor)
+							: DEF_FONT_COLOR,
 				)
 				break
 			case 'image': {
-				const image = typeof props === 'string' || isModifiedThemeColor(props) ? undefined : props.image
-				const rId = image?._rId ?? (typeof props === 'string' || isModifiedThemeColor(props) ? undefined : props._rId)
+				const image = isBareColor ? undefined : props.image
+				const rId = image?._rId ?? (isBareColor ? undefined : props._rId)
 				if (rId) {
 					outText += createImageFillElement(image ?? {}, rId)
 				} else {

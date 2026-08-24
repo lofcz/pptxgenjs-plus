@@ -17,8 +17,11 @@ import {
 	ISlideObject,
 	ObjectOptions,
 	TableCell,
+	ParagraphProps,
+	TextBodyProps,
 	TextProps,
 	TextPropsOptions,
+	TextRunProps,
 	TextShapeType,
 } from '../core-interfaces'
 import { genXmlHyperlink } from './hyperlink'
@@ -37,6 +40,7 @@ const TEXT_SHAPE_TYPES: ReadonlySet<TextShapeType> = new Set([
 	'textSlantUp', 'textSlantDown', 'textCascadeUp', 'textCascadeDown',
 ])
 import {
+	convertRotationDegrees,
 	createColorElement,
 	createGlowElement,
 	encodeXmlEntities,
@@ -47,6 +51,7 @@ import {
 	valToPts,
 	warnDeprecatedOnce,
 } from '../gen-utils'
+import { genXmlLine } from './line'
 
 /**
  * Build the `a:buClr` / `a:buSzPct` / `a:buSzPts` / `a:buFont` prefix shared by every bullet kind
@@ -121,6 +126,16 @@ function genXmlParagraphProperties (textObj: ISlideObject | TextProps, isDefault
 		if (options.indentLevel && !isNaN(Number(options.indentLevel)) && options.indentLevel > 0) {
 			paragraphPropXml += ` lvl="${options.indentLevel}"`
 		}
+
+		// Remaining CT_TextParagraphProperties attributes - omitted unless set
+		const para = options as ParagraphProps
+		if (typeof para.marR === 'number' && isFinite(para.marR) && para.marR >= 0) paragraphPropXml += ` marR="${inch2Emu(para.marR)}"`
+		if (typeof para.defTabSz === 'number' && isFinite(para.defTabSz) && para.defTabSz > 0) paragraphPropXml += ` defTabSz="${inch2Emu(para.defTabSz)}"`
+		if (['auto', 't', 'ctr', 'base', 'b'].includes(String(para.fontAlgn))) paragraphPropXml += ` fontAlgn="${String(para.fontAlgn)}"`
+		// these three default to true in the schema, so only write them when turned off
+		if (para.eaLnBrk === false) paragraphPropXml += ' eaLnBrk="0"'
+		if (para.latinLnBrk === false) paragraphPropXml += ' latinLnBrk="0"'
+		if (para.hangingPunct === false) paragraphPropXml += ' hangingPunct="0"'
 
 		// OPTION: Paragraph Spacing: Before/After
 		if (options.paraSpaceBefore && !isNaN(Number(options.paraSpaceBefore)) && options.paraSpaceBefore > 0) {
@@ -239,9 +254,13 @@ function genXmlTextRunProperties (opts: ObjectOptions | TextPropsOptions, isDefa
 	// ECMA-376 §5.1.12.64 ST_TextCapsType: render-only capitalization (issue #1312)
 	runProps += opts.caps && ['none', 'small', 'all'].includes(opts.caps) ? ` cap="${opts.caps}"` : ''
 	if (opts.kumimoji === true) runProps += ' kumimoji="1"'
-	runProps += ' dirty="0">'
-	// Color / Font / Highlight / Outline are children of <a:rPr>, so add them now before closing the runProperties tag
-	if (opts.color || opts.gradient || opts.fontFace || opts.fontFaceEa || opts.fontFaceCs || opts.outline || (typeof opts.underline === 'object' && opts.underline.color)) {
+	const run = opts as TextRunProps
+	if (run.normalizeH === true) runProps += ' normalizeH="1"'
+	if (run.noProof === true) runProps += ' noProof="1"'
+	// `dirty` was hardcoded to 0; it stays the default so existing output does not change
+	runProps += ` dirty="${run.dirty === true ? '1' : '0'}">`
+	// CT_TextCharacterProperties child order: ln, fill, effect, highlight, uLn, uFill, latin, ea, cs, sym
+	if (opts.color || opts.gradient || opts.fontFace || opts.fontFaceEa || opts.fontFaceCs || opts.fontFaceSym || opts.outline || opts.glow || opts.highlight || run.underlineLine || (typeof opts.underline === 'object' && opts.underline.color)) {
 		if (opts.outline && typeof opts.outline === 'object') {
 			runProps += `<a:ln w="${valToPts(opts.outline.size || 0.75)}">${genXmlColorSelection({
 				color: opts.outline.color || 'FFFFFF',
@@ -251,10 +270,12 @@ function genXmlTextRunProperties (opts: ObjectOptions | TextPropsOptions, isDefa
 		// Run fill: gradient (`a:gradFill`) takes precedence over solid `color` (WordArt / text gradient)
 		if (opts.gradient) runProps += genXmlColorSelection({ type: 'gradient', gradient: opts.gradient, transparency: opts.transparency })
 		else if (opts.color) runProps += genXmlColorSelection({ color: opts.color, transparency: opts.transparency })
-		if (opts.highlight) runProps += `<a:highlight>${createColorElement(opts.highlight)}</a:highlight>`
-		if (typeof opts.underline === 'object' && opts.underline.color) runProps += `<a:uFill>${genXmlColorSelection(opts.underline.color)}</a:uFill>`
 		const resolvedGlow = resolveGlowOptions(opts.glow)
 		if (resolvedGlow) runProps += `<a:effectLst>${createGlowElement(resolvedGlow)}</a:effectLst>`
+		if (opts.highlight) runProps += `<a:highlight>${createColorElement(opts.highlight)}</a:highlight>`
+		if (run.underlineLine === 'text') runProps += '<a:uLnTx/>'
+		else if (run.underlineLine && typeof run.underlineLine === 'object') runProps += genXmlLine(run.underlineLine, 'a:uLn')
+		if (typeof opts.underline === 'object' && opts.underline.color) runProps += `<a:uFill>${genXmlColorSelection(opts.underline.color)}</a:uFill>`
 		const latin = opts.fontFace
 		const ea = opts.fontFaceEa || opts.fontFace
 		const cs = opts.fontFaceCs || opts.fontFace
@@ -264,6 +285,7 @@ function genXmlTextRunProperties (opts: ObjectOptions | TextPropsOptions, isDefa
 			if (ea) runProps += `<a:ea typeface="${encodeXmlEntities(ea)}" pitchFamily="34" charset="-122"/>`
 			if (cs) runProps += `<a:cs typeface="${encodeXmlEntities(cs)}" pitchFamily="34" charset="-120"/>`
 		}
+		if (opts.fontFaceSym) runProps += `<a:sym typeface="${encodeXmlEntities(opts.fontFaceSym)}"/>`
 	}
 
 	// Hyperlink support
@@ -427,6 +449,15 @@ function genXmlBodyProperties (slideObject: ISlideObject | TableCell): string {
 		if (slideObject.options._bodyProp.tIns || slideObject.options._bodyProp.tIns === 0) bodyProperties += ` tIns="${slideObject.options._bodyProp.tIns}"`
 		if (slideObject.options._bodyProp.rIns || slideObject.options._bodyProp.rIns === 0) bodyProperties += ` rIns="${slideObject.options._bodyProp.rIns}"`
 		if (slideObject.options._bodyProp.bIns || slideObject.options._bodyProp.bIns === 0) bodyProperties += ` bIns="${slideObject.options._bodyProp.bIns}"`
+
+		// Remaining CT_TextBodyProperties attributes - each omitted unless asked for
+		const body = slideObject.options as TextBodyProps
+		if (body.upright === true) bodyProperties += ' upright="1"'
+		if (typeof body.textRotate === 'number' && isFinite(body.textRotate)) bodyProperties += ` rot="${convertRotationDegrees(body.textRotate)}"`
+		if (body.anchorCtr === true) bodyProperties += ' anchorCtr="1"'
+		if (body.spcFirstLastPara === true) bodyProperties += ' spcFirstLastPara="1"'
+		if (body.compatLnSpc === true) bodyProperties += ' compatLnSpc="1"'
+		if (body.forceAA === true) bodyProperties += ' forceAA="1"'
 
 		// Text columns — ECMA-376 §5.1.5.1.4 CT_TextBodyProperties@numCol/@spcCol (issue #1320)
 		if (slideObject.options._bodyProp.numCol && slideObject.options._bodyProp.numCol > 1) {
