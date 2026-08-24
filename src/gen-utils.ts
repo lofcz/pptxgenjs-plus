@@ -798,8 +798,8 @@ export function genXmlColorSelection (props: Color | ShapeFillProps | ShapeLineP
 				)
 				break
 			case 'image': {
-				const image = typeof props === 'string' || isModifiedThemeColor(props) ? undefined : props.image
-				const rId = image?._rId ?? (typeof props === 'string' || isModifiedThemeColor(props) ? undefined : props._rId)
+				const image = isBareColor ? undefined : props.image
+				const rId = image?._rId ?? (isBareColor ? undefined : props._rId)
 				if (rId) {
 					outText += createImageFillElement(image ?? {}, rId)
 				} else {

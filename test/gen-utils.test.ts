@@ -520,9 +520,9 @@ test('genXmlLine: invalid line options are dropped with a warning', () => {
 	const orig = console.warn
 	const warnings: string[] = []
 	console.warn = (msg: string) => warnings.push(String(msg))
-	let compound = ''
-	let dash = ''
-	let join = ''
+	let compound: string
+	let dash: string
+	let join: string
 	try {
 		compound = genXmlLine({ color: '000000', compound: 'quad' as 'sng' })
 		dash = genXmlLine({ color: '000000', custDash: [{ dash: -1, space: 100 }, { dash: 200, space: 100 }] })
