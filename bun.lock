@@ -24,7 +24,7 @@
     },
     "packages/pptxgenjs-jsx": {
       "name": "pptxgenjs-plus-jsx",
-      "version": "4.1.19",
+      "version": "4.1.20",
       "dependencies": {
         "pptxgenjs-plus": "file:../..",
       },
@@ -35,14 +35,14 @@
     },
     "packages/pptxgenjs-std": {
       "name": "pptxgenjs-plus-std",
-      "version": "4.1.19",
+      "version": "4.1.20",
       "devDependencies": {
         "@types/node": "^26.2.0",
         "pptxgenjs-plus": "file:../..",
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "pptxgenjs-plus": "4.1.19",
+        "pptxgenjs-plus": "4.1.20",
       },
     },
   },

@@ -2,7 +2,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import pptxgen from '../../../src/pptxgen'
-import { grid, gridFor } from '../src/layout'
+import { grid, gridFor, row, column, cm, pt } from '../src/layout'
 
 /** Grid maths lands on repeating fractions; compare at a tolerance no slide can render past. */
 const near = (actual: number, expected: number, what: string): void => {
@@ -94,4 +94,76 @@ test('gridFor: follows a custom layout', () => {
 	const cell = gridFor(pptx, { cols: 1, rows: 1, gutter: 0, margin: 0 })(0, 0)
 	near(cell.w, 11.7, 'width comes from the defined layout')
 	near(cell.h, 8.3, 'height comes from the defined layout')
+})
+
+test('row: equal slots span the area with gaps between them', () => {
+	const area = { x: 1, y: 2, w: 9, h: 4 }
+	const [a, b, c] = row(area, 3, 0.3)
+	assert.equal(a.x, 1)
+	assert.equal(a.y, 2)
+	assert.equal(a.h, 4, 'the cross axis is untouched')
+	// 9" less two 0.3" gaps, split three ways
+	assert.ok(Math.abs(a.w - (9 - 0.6) / 3) < 1e-9)
+	assert.ok(Math.abs(b.x - (a.x + a.w + 0.3)) < 1e-9)
+	assert.ok(Math.abs(c.x + c.w - (area.x + area.w)) < 1e-9, 'the last slot ends where the area does')
+})
+
+test('row: weights divide the remaining space proportionally', () => {
+	const [left, right] = row({ x: 0, y: 0, w: 10, h: 5 }, [1, 3], 0)
+	assert.ok(Math.abs(left.w - 2.5) < 1e-9)
+	assert.ok(Math.abs(right.w - 7.5) < 1e-9)
+	assert.ok(Math.abs(right.x - 2.5) < 1e-9)
+})
+
+test('column: stacks slots down the area', () => {
+	const [top, bottom] = column({ x: 1, y: 1, w: 8, h: 4.5 }, [1, 2], 0.3)
+	assert.equal(top.x, 1)
+	assert.equal(top.w, 8, 'the cross axis is untouched')
+	assert.equal(top.y, 1)
+	assert.ok(Math.abs(top.h - (4.5 - 0.3) / 3) < 1e-9)
+	assert.ok(Math.abs(bottom.y - (top.y + top.h + 0.3)) < 1e-9)
+	assert.ok(Math.abs(bottom.y + bottom.h - 5.5) < 1e-9)
+})
+
+test('row/column: slots nest, because output and input are the same shape', () => {
+	const [, body] = column({ x: 0.5, y: 0.5, w: 9, h: 4.625 }, [1, 4])
+	const cells = row(body, 3)
+	assert.equal(cells.length, 3)
+	for (const cell of cells) {
+		assert.ok(cell.y >= body.y - 1e-9 && cell.y + cell.h <= body.y + body.h + 1e-9, 'nested slots stay inside their parent')
+	}
+})
+
+test('row/column: a single slot is the area minus nothing', () => {
+	const area = { x: 1, y: 1, w: 4, h: 2 }
+	assert.deepEqual(row(area, 1), [area])
+	assert.deepEqual(column(area, 1, 5), [area], 'a gap needs two slots to matter')
+})
+
+test('row/column: reject what would silently misplace content', () => {
+	const area = { x: 0, y: 0, w: 4, h: 2 }
+	assert.throws(() => row(area, 0), /slot count must be an integer >= 1/)
+	assert.throws(() => row(area, 1.5), /slot count must be an integer >= 1/)
+	assert.throws(() => row(area, []), /weights must not be empty/)
+	assert.throws(() => row(area, [1, 0]), /every weight must be > 0/)
+	assert.throws(() => row(area, [1, -1]), /every weight must be > 0/)
+	assert.throws(() => row(area, 2, -1), /gap must be >= 0/)
+	assert.throws(() => row(area, 5, 1), /leaves no room across 4/)
+	assert.throws(() => column(area, 5, 1), /leaves no room across 2/)
+})
+
+test('cm/pt: convert to the inches every addX option wants', () => {
+	near(cm(2.54), 1, 'one inch of centimetres')
+	near(cm(0), 0, 'zero converts')
+	near(cm(-1.27), -0.5, 'negative offsets are legal positions')
+	near(pt(72), 1, 'one inch of points')
+	near(pt(18), 0.25, 'a quarter inch')
+	// A4 landscape, the metric page these exist for
+	near(cm(29.7), 11.692913385826772, 'A4 width')
+})
+
+test('cm/pt: reject what would place content at NaN', () => {
+	assert.throws(() => cm(Number.NaN), /cm: value must be a finite number/)
+	assert.throws(() => cm(Number.POSITIVE_INFINITY), /cm: value must be a finite number/)
+	assert.throws(() => pt(Number.NaN), /pt: value must be a finite number/)
 })

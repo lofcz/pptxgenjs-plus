@@ -1,2 +1,5 @@
 export { grid, gridFor } from './grid'
 export type { GridProps, GridArea } from './grid'
+export { row, column } from './split'
+export type { Slots } from './split'
+export { cm, pt } from './units'
