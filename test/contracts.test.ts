@@ -390,7 +390,7 @@ test('contract: each chartex layout emits the markup PowerPoint keys off', async
 test('contract: chartex options that PowerPoint would reject are dropped with a warning', async () => {
 	const warnings: string[] = []
 	const origWarn = console.warn
-	let xml = ''
+	let xml: string
 	try {
 		console.warn = (msg: string) => warnings.push(String(msg))
 		xml = await chartExXml('waterfall', WATERFALL_DATA, { chartExSubtotals: [0, 9], chartExBinCount: 0, chartExParentLabels: 'sideways' })
@@ -434,10 +434,10 @@ test('contract: classic charts are untouched by the chartex path', async () => {
 test('contract: chartex data that PowerPoint would reject is normalized, not emitted', async () => {
 	const warnings: string[] = []
 	const origWarn = console.warn
-	let ragged = ''
-	let multi = ''
-	let extra = ''
-	let noLabels = ''
+	let ragged: string
+	let multi: string
+	let extra: string
+	let noLabels: string
 	try {
 		console.warn = (msg: string) => warnings.push(String(msg))
 		ragged = await chartExXml('waterfall', [{ name: 'Cash', labels: ['a', 'b', 'c', 'd'], values: [10, null, 30] }])
@@ -475,8 +475,8 @@ test('contract: chartex options use the cx vocabulary, not the ECMA-376 one', as
 
 	const warnings: string[] = []
 	const origWarn = console.warn
-	let honoured = ''
-	let rejected = ''
+	let honoured: string
+	let rejected: string
 	try {
 		console.warn = (msg: string) => warnings.push(String(msg))
 		honoured = await chartExXml('waterfall', [{ name: 'C', labels: ['a', 'b'], values: [1, 2] }], { showValue: true, dataLabelPosition: 'ctr' })
@@ -528,7 +528,7 @@ test('contract: text fields emit a:fld with a cached value', async () => {
 	const warnings: string[] = []
 	const origWarn = console.warn
 	console.warn = (msg: string) => warnings.push(String(msg))
-	let badXml = ''
+	let badXml: string
 	try {
 		const bad = new pptxgen()
 		bad.addSlide().addText([{ text: 'x', options: { field: 'lunchtime' as unknown as 'slidenum' } }], { x: 1, y: 1, w: 2, h: 1 })
@@ -605,7 +605,8 @@ test('contract: mouse-over actions use the right element for each host', async (
 	assert.match(xml, /<a:hlinkMouseOver r:id="rId\d+" action="ppaction:\/\/hlinksldjump" tooltip=""\/>/, 'text-run hover must use a:hlinkMouseOver')
 	assert.equal([...xml.matchAll(/<a:hlinkMouseOver/g)].length, 1, 'exactly one run-level hover expected')
 	assert.equal([...xml.matchAll(/<a:hlinkHover/g)].length, 2, 'exactly two shape-level hovers expected')
-	assert.doesNotMatch(xml, /<p:cNvPr[^>]*>(?:(?!<\/p:cNvPr>)[\s\S])*<a:hlinkMouseOver/, 'a:hlinkMouseOver must not appear in p:cNvPr')
+	const nvPrBlocks = xml.match(/<p:cNvPr(?![^>]*\/>)[^>]*>[\s\S]*?<\/p:cNvPr>/g) ?? []
+	assert.ok(nvPrBlocks.every(block => !block.includes('<a:hlinkMouseOver')), 'a:hlinkMouseOver must not appear in p:cNvPr')
 
 	const rels = await readPart(hlZip, 'ppt/slides/_rels/slide1.xml.rels')
 	;[...xml.matchAll(/<a:hlink\w+ r:id="(rId\d+)"/g)].map(match => match[1]).forEach(rid => {
@@ -639,7 +640,7 @@ test('contract: invalid hover and sound input is dropped with a warning', async 
 	const warnings: string[] = []
 	const origWarn = console.warn
 	console.warn = (msg: string) => warnings.push(String(msg))
-	let xml = ''
+	let xml: string
 	try {
 		const pptx = new pptxgen()
 		const slide = pptx.addSlide()
@@ -691,7 +692,7 @@ test('contract: invalid picture fills degrade instead of writing broken XML', as
 	const warnings: string[] = []
 	const origWarn = console.warn
 	console.warn = (msg: string) => warnings.push(String(msg))
-	let xml = ''
+	let xml: string
 	try {
 		const pptx = new pptxgen()
 		const slide = pptx.addSlide()
@@ -753,7 +754,7 @@ test('contract: locks that do not apply to an object are dropped with a warning'
 	const warnings: string[] = []
 	const origWarn = console.warn
 	console.warn = (msg: string) => warnings.push(String(msg))
-	let xml = ''
+	let xml: string
 	try {
 		const pptx = new pptxgen()
 		pptx.addSlide().addTable([['a']], { x: 1, y: 1, w: 3, lock: { noTextEdit: true, noSelect: true } })

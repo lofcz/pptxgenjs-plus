@@ -3705,8 +3705,6 @@ export interface ObjectOptions extends ImageProps, PositionProps, ShapeProps, Ta
 	audioCd?: AudioCdProps
 	/** media frame marked as a photo (`p:nvPr@isPhoto`) @internal */
 	isPhoto?: boolean
-	/** author-placed rather than layout furniture (`p:nvPr@userDrawn`) @internal */
-	userDrawn?: boolean
 	/** media referenced rather than embedded @internal */
 	isLinked?: boolean
 	// MS-PPTX §2.8 CT_ZoomObjectProperties (zoom objects only)
