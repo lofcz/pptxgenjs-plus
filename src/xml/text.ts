@@ -8,9 +8,11 @@ import {
 	DEF_BULLET_MARGIN,
 	PLACEHOLDER_TYPES,
 	SLIDE_OBJECT_TYPES,
+	TEXT_FIELD_TYPES,
 } from '../core-enums'
 import {
 	ClassificationOutcome,
+	Color,
 	DesignerTag,
 	ISlideObject,
 	ObjectOptions,
@@ -19,6 +21,7 @@ import {
 	TextPropsOptions,
 	TextShapeType,
 } from '../core-interfaces'
+import { genXmlHyperlink } from './hyperlink'
 
 /** ECMA-376 §5.1.12.76 `ST_TextShapeType` — used to validate `a:prstTxWarp@prst`. */
 const TEXT_SHAPE_TYPES: ReadonlySet<TextShapeType> = new Set([
@@ -46,6 +49,29 @@ import {
 } from '../gen-utils'
 
 /**
+ * Build the `a:buClr` / `a:buSzPct` / `a:buSzPts` / `a:buFont` prefix shared by every bullet kind
+ * - the size defaults to 100% because that is what every branch emitted before
+ */
+function genXmlBulletPrefix (bullet: { color?: Color, size?: number, sizePts?: number, fontFace?: string }): string {
+	let xml = ''
+	if (bullet.color) xml += `<a:buClr>${createColorElement(bullet.color)}</a:buClr>`
+
+	// `a:buSzPct` and `a:buSzPts` are the same choice, so only one may appear
+	if (typeof bullet.sizePts === 'number' && isFinite(bullet.sizePts) && bullet.sizePts > 0) {
+		xml += `<a:buSzPts val="${Math.round(bullet.sizePts * 100)}"/>`
+	} else {
+		const pct = typeof bullet.size === 'number' && isFinite(bullet.size) ? Math.min(400, Math.max(25, bullet.size)) : 100
+		if (typeof bullet.size === 'number' && (bullet.size < 25 || bullet.size > 400)) {
+			console.warn(`[pptxgenjs] bullet \`size\` must be between 25 and 400 percent - "${String(bullet.size)}" clamped`)
+		}
+		xml += `<a:buSzPct val="${Math.round(pct * 1000)}"/>`
+	}
+
+	if (bullet.fontFace) xml += `<a:buFont typeface="${encodeXmlEntities(bullet.fontFace)}"/>`
+	return xml
+}
+
+/**
  * Generate XML Paragraph Properties
  * @param {ISlideObject|TextProps} textObj - text object
  * @param {boolean} isDefault - array of default relations
@@ -53,7 +79,6 @@ import {
  */
 function genXmlParagraphProperties (textObj: ISlideObject | TextProps, isDefault: boolean): string {
 	let strXmlBullet = ''
-	let strXmlBulletColor = ''
 	let strXmlLnSpc = ''
 	let strXmlParaSpc = ''
 	let strXmlTabStops = ''
@@ -111,11 +136,18 @@ function genXmlParagraphProperties (textObj: ISlideObject | TextProps, isDefault
 		if (typeof options.bullet === 'object') {
 			if (options.bullet?.indent) bulletMarL = valToPts(options.bullet.indent)
 
-			if (options.bullet.type && options.bullet.type.toString().toLowerCase() === 'number') {
+			const buPrefix = genXmlBulletPrefix(options.bullet)
+			const buIndent = ` marL="${options.indentLevel && options.indentLevel > 0 ? bulletMarL + bulletMarL * options.indentLevel : bulletMarL}" indent="-${bulletMarL}"`
+
+			if (options.bullet.image && options.bullet._imageRId) {
+				// `a:buBlip` replaces the character or number bullet entirely
+				paragraphPropXml += buIndent
+				strXmlBullet = `${buPrefix}<a:buBlip><a:blip r:embed="rId${options.bullet._imageRId}"/></a:buBlip>`
+			} else if (options.bullet.type && options.bullet.type.toString().toLowerCase() === 'number') {
 				// NOTE: only `type: 'number'` is a distinct branch; any other `type` (e.g. 'bullet') falls through to the char-bullet cases below (issue #1432)
-				paragraphPropXml += ` marL="${options.indentLevel && options.indentLevel > 0 ? bulletMarL + bulletMarL * options.indentLevel : bulletMarL
-				}" indent="-${bulletMarL}"`
-				strXmlBullet = `<a:buSzPct val="100000"/><a:buFont typeface="+mj-lt"/><a:buAutoNum type="${options.bullet.style || 'arabicPeriod'}" startAt="${options.bullet.numberStartAt || options.bullet.startAt || '1'
+				paragraphPropXml += buIndent
+				// auto-numbered bullets fall back to the major latin face when none is given
+				strXmlBullet = `${buPrefix}${options.bullet.fontFace ? '' : '<a:buFont typeface="+mj-lt"/>'}<a:buAutoNum type="${options.bullet.numberType || options.bullet.style || 'arabicPeriod'}" startAt="${options.bullet.numberStartAt || options.bullet.startAt || '1'
 				}"/>`
 			} else if (options.bullet.characterCode) {
 				let bulletCode = `&#x${options.bullet.characterCode};`
@@ -126,9 +158,8 @@ function genXmlParagraphProperties (textObj: ISlideObject | TextProps, isDefault
 					bulletCode = BULLET_TYPES.DEFAULT
 				}
 
-				paragraphPropXml += ` marL="${options.indentLevel && options.indentLevel > 0 ? bulletMarL + bulletMarL * options.indentLevel : bulletMarL
-				}" indent="-${bulletMarL}"`
-				strXmlBullet = '<a:buSzPct val="100000"/><a:buChar char="' + bulletCode + '"/>'
+				paragraphPropXml += buIndent
+				strXmlBullet = `${buPrefix}<a:buChar char="${bulletCode}"/>`
 			} else if (options.bullet.code) {
 				// @deprecated `bullet.code` v3.3.0
 				let bulletCode = `&#x${options.bullet.code};`
@@ -139,17 +170,11 @@ function genXmlParagraphProperties (textObj: ISlideObject | TextProps, isDefault
 					bulletCode = BULLET_TYPES.DEFAULT
 				}
 
-				paragraphPropXml += ` marL="${options.indentLevel && options.indentLevel > 0 ? bulletMarL + bulletMarL * options.indentLevel : bulletMarL
-				}" indent="-${bulletMarL}"`
-				strXmlBullet = '<a:buSzPct val="100000"/><a:buChar char="' + bulletCode + '"/>'
+				paragraphPropXml += buIndent
+				strXmlBullet = `${buPrefix}<a:buChar char="${bulletCode}"/>`
 			} else {
-				paragraphPropXml += ` marL="${options.indentLevel && options.indentLevel > 0 ? bulletMarL + bulletMarL * options.indentLevel : bulletMarL
-				}" indent="-${bulletMarL}"`
-				strXmlBullet = `<a:buSzPct val="100000"/><a:buChar char="${BULLET_TYPES.DEFAULT}"/>`
-			}
-			// mikemeerschaert/add-color-option-to-bullets — buClr must precede buSz*/buChar (OOXML order)
-			if (options.bullet.color) {
-				strXmlBulletColor = `<a:buClr>${createColorElement(options.bullet.color)}</a:buClr>`
+				paragraphPropXml += buIndent
+				strXmlBullet = `${buPrefix}<a:buChar char="${BULLET_TYPES.DEFAULT}"/>`
 			}
 		} else if (options.bullet) {
 			paragraphPropXml += ` marL="${options.indentLevel && options.indentLevel > 0 ? bulletMarL + bulletMarL * options.indentLevel : bulletMarL
@@ -169,7 +194,7 @@ function genXmlParagraphProperties (textObj: ISlideObject | TextProps, isDefault
 
 		// B: Close Paragraph-Properties
 		// IMPORTANT: strXmlLnSpc, strXmlParaSpc, buClr, and strXmlBullet require strict ordering - anything out of order is ignored. (PPT-Online, PPT for Mac)
-		paragraphPropXml += '>' + strXmlLnSpc + strXmlParaSpc + strXmlBulletColor + strXmlBullet + strXmlTabStops
+		paragraphPropXml += '>' + strXmlLnSpc + strXmlParaSpc + strXmlBullet + strXmlTabStops
 		if (isDefault) paragraphPropXml += genXmlTextRunProperties(options, true)
 		paragraphPropXml += '</' + tag + '>'
 	}
@@ -213,6 +238,7 @@ function genXmlTextRunProperties (opts: ObjectOptions | TextPropsOptions, isDefa
 	runProps += opts.charSpacing ? ` spc="${Math.round(opts.charSpacing * 100)}" kern="0"` : '' // IMPORTANT: Also disable kerning; otherwise text won't actually expand
 	// ECMA-376 §5.1.12.64 ST_TextCapsType: render-only capitalization (issue #1312)
 	runProps += opts.caps && ['none', 'small', 'all'].includes(opts.caps) ? ` cap="${opts.caps}"` : ''
+	if (opts.kumimoji === true) runProps += ' kumimoji="1"'
 	runProps += ' dirty="0">'
 	// Color / Font / Highlight / Outline are children of <a:rPr>, so add them now before closing the runProperties tag
 	if (opts.color || opts.gradient || opts.fontFace || opts.fontFaceEa || opts.fontFaceCs || opts.outline || (typeof opts.underline === 'object' && opts.underline.color)) {
@@ -244,23 +270,15 @@ function genXmlTextRunProperties (opts: ObjectOptions | TextPropsOptions, isDefa
 	if (opts.hyperlink) {
 		if (typeof opts.hyperlink !== 'object') throw new Error('ERROR: text `hyperlink` option should be an object. Ex: `hyperlink:{url:\'https://github.com\'}` ')
 		else if (!opts.hyperlink.url && !opts.hyperlink.slide) throw new Error('ERROR: \'hyperlink requires either `url` or `slide`\'')
-		else if (opts.hyperlink.url) {
-			// runProps += '<a:uFill>'+ genXmlColorSelection('0000FF') +'</a:uFill>'; // Breaks PPT2010! (Issue#74)
-			runProps += `<a:hlinkClick r:id="rId${opts.hyperlink._rId}" invalidUrl="" action="" tgtFrame="" tooltip="${opts.hyperlink.tooltip ? encodeXmlEntities(opts.hyperlink.tooltip) : ''
-			}" history="1" highlightClick="0" endSnd="0"${opts.color ? '>' : '/>'}`
-		} else if (opts.hyperlink.slide) {
-			runProps += `<a:hlinkClick r:id="rId${opts.hyperlink._rId}" action="ppaction://hlinksldjump" tooltip="${opts.hyperlink.tooltip ? encodeXmlEntities(opts.hyperlink.tooltip) : ''
-			}"${opts.color ? '>' : '/>'}`
-		}
-		if (opts.color) {
-			runProps += ' <a:extLst>'
-			runProps += '  <a:ext uri="{A12FA001-AC4F-418D-AE19-62706E023703}">'
-			runProps += '   <ahyp:hlinkClr xmlns:ahyp="http://schemas.microsoft.com/office/drawing/2018/hyperlinkcolor" val="tx"/>'
-			runProps += '  </a:ext>'
-			runProps += ' </a:extLst>'
-			runProps += '</a:hlinkClick>'
-		}
+		// A colored link keeps its run color instead of the theme's hyperlink color (issue #74: an
+		// `a:uFill` here breaks PPT2010, so the extension is used rather than an underline fill)
+		const linkColorExt = opts.color
+			? '<a:extLst><a:ext uri="{A12FA001-AC4F-418D-AE19-62706E023703}"><ahyp:hlinkClr xmlns:ahyp="http://schemas.microsoft.com/office/drawing/2018/hyperlinkcolor" val="tx"/></a:ext></a:extLst>'
+			: ''
+		runProps += genXmlHyperlink(opts.hyperlink, 'click', 'run', linkColorExt)
 	}
+	// `a:hlinkMouseOver` follows `a:hlinkClick` in CT_TextCharacterProperties
+	if (opts.hyperlinkHover?._rId) runProps += genXmlHyperlink(opts.hyperlinkHover, 'hover', 'run')
 
 	// END runProperties
 	runProps += `</${runPropsTag}>`
@@ -311,6 +329,17 @@ function normalizeOmml (omml: string): string {
 	return `<a14:m xmlns:a14="${A14_NS}">${trimmed}</a14:m>`
 }
 
+/**
+ * A stable GUID for a field, derived from its type and cached value
+ * - `a:fld@id` must be a GUID; deriving it keeps repeated exports byte-identical
+ */
+function fieldGuid (type: string, cached: string): string {
+	let hash = 0
+	for (const char of `${type}:${cached}`) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+	const hex = hash.toString(16).padStart(8, '0')
+	return `{${hex}-0000-0000-0000-${hex}0000}`
+}
+
 export function textRunsHaveOmml (text: TextProps[] | string | undefined): boolean {
 	if (!Array.isArray(text)) return false
 	return text.some(t => typeof t.options?.omml === 'string' && t.options.omml.trim().length > 0)
@@ -351,6 +380,23 @@ function genXmlTextRun (textObj: TextProps): string {
 		</a:p>
 	*/
 
+	/* A field is a run the consumer refreshes on open (ECMA-376 21.1.2.2.4). The `a:t` child holds
+	 * the cached value so a consumer that does not refresh still renders something. `id` must be a
+	 * GUID; it is derived from the field type and text so repeated exports stay reproducible. */
+	const field = textObj.options?.field
+	if (field) {
+		if (!TEXT_FIELD_TYPES.has(field)) {
+			console.warn(`[pptxgenjs] unknown text field "${String(field)}" - run emitted as plain text instead`)
+		} else {
+			return (
+				`<a:fld id="${fieldGuid(field, textObj.text ?? '')}" type="${field}">` +
+				genXmlTextRunProperties(textObj.options ?? {}, false) +
+				`<a:t>${encodeXmlEntities(textObj.text ?? '')}</a:t>` +
+				'</a:fld>'
+			)
+		}
+	}
+
 	// Return paragraph with text run
 	return textObj.text ? `<a:r>${genXmlTextRunProperties(textObj.options ?? {}, false)}<a:t>${encodeXmlEntities(textObj.text)}</a:t></a:r>` : ''
 }
@@ -382,14 +428,15 @@ function genXmlBodyProperties (slideObject: ISlideObject | TableCell): string {
 		if (slideObject.options._bodyProp.rIns || slideObject.options._bodyProp.rIns === 0) bodyProperties += ` rIns="${slideObject.options._bodyProp.rIns}"`
 		if (slideObject.options._bodyProp.bIns || slideObject.options._bodyProp.bIns === 0) bodyProperties += ` bIns="${slideObject.options._bodyProp.bIns}"`
 
-		// C: Add rtl after margins
-		bodyProperties += ' rtlCol="0"'
-
 		// Text columns — ECMA-376 §5.1.5.1.4 CT_TextBodyProperties@numCol/@spcCol (issue #1320)
 		if (slideObject.options._bodyProp.numCol && slideObject.options._bodyProp.numCol > 1) {
 			bodyProperties += ` numCol="${slideObject.options._bodyProp.numCol}"`
 			if (slideObject.options._bodyProp.spcCol) bodyProperties += ` spcCol="${slideObject.options._bodyProp.spcCol}"`
 		}
+
+		// `rtlCol` follows the text box's RTL mode unless overridden, so RTL columns flow correctly
+		const rtlCols = typeof slideObject.options.rtlColumns === 'boolean' ? slideObject.options.rtlColumns : slideObject.options.rtlMode === true
+		bodyProperties += ` rtlCol="${rtlCols ? '1' : '0'}"`
 
 		// D: Add anchorPoints
 		if (slideObject.options._bodyProp.anchor) bodyProperties += ' anchor="' + slideObject.options._bodyProp.anchor + '"' // VALS: [t,ctr,b]
@@ -435,7 +482,9 @@ function genXmlBodyProperties (slideObject: ISlideObject | TableCell): string {
 		bodyProperties += '</a:bodyPr>'
 	} else {
 		// DEFAULT:
-		bodyProperties += ' wrap="square" rtlCol="0">'
+		const opts = slideObject.options as ObjectOptions | undefined
+		const rtlCols = typeof opts?.rtlColumns === 'boolean' ? opts.rtlColumns : opts?.rtlMode === true
+		bodyProperties += ` wrap="square" rtlCol="${rtlCols ? '1' : '0'}">`
 		bodyProperties += '</a:bodyPr>'
 	}
 

@@ -243,3 +243,81 @@ slide.addText(arrTextObjs2, { x: 0.5, y: 4, w: 8, h: 2, fill: { color: "232323" 
 ### Tab Stops
 
 ![tab stops](./assets/ex-text-tabstops.png)
+
+## Fields
+
+A field is a run PowerPoint refreshes on open — a date, the slide number, a header or footer. The run's
+`text` is the cached value, shown by consumers that do not refresh.
+
+```typescript
+slide.addText([
+    { text: '22/08/2026', options: { field: 'datetime1' } },
+    { text: ' — page ' },
+    { text: '1', options: { field: 'slidenum' } },
+], { x: 1, y: 1, w: 4, h: 0.5 });
+```
+
+Types: `slidenum`, `datetime`, `datetime1`–`datetime13` (locale-formatted variants),
+`datetimeFigureOut`, `headerfooter`, `hdr`, `ftr`. Fields mix freely with ordinary runs in a paragraph.
+An unknown type is emitted as plain text with a warning. Slide-number placeholders (`slideNumber` on a
+master) are unchanged.
+
+## Bullet Colour, Size, Font, and Pictures
+
+```typescript
+slide.addText('item', { x: 1, y: 1, w: 4, h: 1, bullet: { image: pngBase64, size: 150 } });
+slide.addText('item', { x: 1, y: 2, w: 4, h: 1, bullet: { characterCode: '25BA', fontFace: 'Wingdings', color: 'FF0000' } });
+```
+
+| Option     | Type   | Default | Description                                             |
+| :--------- | :----- | :------ | :------------------------------------------------------ |
+| `color`    | Color  |         | bullet colour, independent of the text (`a:buClr`)      |
+| `size`     | number | `100`   | percent of text size, 25–400 (`a:buSzPct`)              |
+| `sizePts`  | number |         | size in points instead of a percent (`a:buSzPts`)       |
+| `fontFace` | string |         | typeface for the glyph (`a:buFont`)                     |
+| `image`    | string |         | base64 picture bullet (`a:buBlip`)                      |
+
+A picture bullet replaces a character or number bullet. `sizePts` and `size` are the same choice in the
+schema, so `sizePts` wins when both are given. Numbered bullets keep their `+mj-lt` fallback unless
+`fontFace` is set. Existing keys (`characterCode`, `numberType`, `numberStartAt`) are unchanged.
+
+## Right-to-Left Columns and East Asian Text
+
+`rtlColumns` controls `a:bodyPr@rtlCol`, which decides whether multi-column text flows right-to-left.
+It follows the text box's `rtlMode` unless set explicitly. Table `rtlMode` (`a:tblPr@rtl`) is unchanged.
+`kumimoji` enables horizontal-in-vertical numerals for East Asian vertical text.
+
+## Mouse-Over Actions
+
+`hyperlinkHover` takes the same props as `hyperlink` but fires on mouse-over — PowerPoint's
+Insert > Action > Mouse Over tab. It works on text runs, shapes, and images.
+
+```typescript
+slide.addShape(pptx.ShapeType.rect, {
+    x: 1, y: 1, w: 3, h: 1,
+    hyperlink: { url: 'https://example.com', tooltip: 'Open the site' },
+    hyperlinkHover: { slide: 4, tooltip: 'Preview the results slide' },
+});
+```
+
+### Hyperlink Props (`HyperlinkProps`)
+
+| Option              | Type                  | Default | Description                                       |
+| :------------------ | :-------------------- | :------ | :------------------------------------------------ |
+| `url`               | string                |         | external target (`url` or `slide` is required)    |
+| `slide`             | number                |         | slide number to jump to                           |
+| `tooltip`           | string                |         | tooltip text                                      |
+| `highlightClick`    | boolean               | `false` | highlight the link when clicked                   |
+| `stopSoundsOnClick` | boolean               | `false` | stop playing sounds when clicked                  |
+| `sound`             | `HyperlinkSoundProps` |         | sound played when the action fires                |
+
+### Action Sounds
+
+| Option | Type   | Default      | Description                                        |
+| :----- | :----- | :----------- | :------------------------------------------------- |
+| `data` | string |              | WAV data, base64 with a mime header (`data`/`path`) |
+| `path` | string |              | WAV file path or URL                               |
+| `name` | string | `sound.wav`  | name PowerPoint shows in the Action dialog          |
+
+`a:snd` accepts WAV only (ECMA-376 §20.1.2.2.32); other formats are rejected with a warning rather
+than linked. A hover link with neither `url` nor `slide` is dropped with a warning.
