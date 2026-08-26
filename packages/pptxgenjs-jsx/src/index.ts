@@ -24,6 +24,8 @@ export * from "./components.js";
 export {
   applyOmmlRunStyle,
   fromMarkdown,
+  headingSize,
+  HEADING_SCALE,
   latexToOmml,
   mathRun,
   tokenizeMath,
