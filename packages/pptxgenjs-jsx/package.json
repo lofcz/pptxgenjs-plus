@@ -1,6 +1,6 @@
 {
 	"name": "pptxgenjs-plus-jsx",
-	"version": "4.2.1",
+	"version": "4.3.0",
 	"description": "JSX runtime for building PowerPoint presentations with pptxgenjs-plus",
 	"homepage": "https://github.com/lofcz/pptxgenjs-plus/tree/next/packages/pptxgenjs-jsx#readme",
 	"bugs": {
