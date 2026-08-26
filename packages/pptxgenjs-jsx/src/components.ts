@@ -12,6 +12,7 @@
 
 import type PptxGenJSType from "pptxgenjs-plus";
 
+import { fromMarkdown } from "./markdown/fromMarkdown.js";
 import {
   type ComponentFactory,
   type ComponentProps,
@@ -154,6 +155,22 @@ export type TextProps = Omit<PptxGenJSType.TextPropsOptions, "children"> & {
   children?: PptxChildren;
   /** Options forwarded to the underlying PptxGenJS API call. */
   options?: PptxGenJSType.TextPropsOptions;
+};
+
+/**
+ * A fixed-size text box. Markdown (headings, lists, bold/italic, `$…$` / `$$…$$`)
+ * is parsed into native PPTX runs — real bullets and OMML equations — then
+ * PowerPoint shrink-to-fit keeps the authored `x/y/w/h`.
+ */
+export type FixedBoxProps = Omit<TextProps, "text" | "runs" | "children"> & {
+  x: PptxGenJSType.Coord;
+  y: PptxGenJSType.Coord;
+  w: PptxGenJSType.Coord;
+  h: PptxGenJSType.Coord;
+  /** CommonMark + TeX delimiters. Preferred over string children. */
+  markdown?: string;
+  /** Markdown source when `markdown` is omitted. */
+  children?: string | number | readonly (string | number | null | undefined)[];
 };
 
 /** Props for `<Notes>` — speaker notes for a slide.
@@ -543,6 +560,47 @@ export const TextRun = component("TextRun") as ComponentFactory<TextRunProps>;
  * ```
  */
 export const Notes = component("Notes") as ComponentFactory<NotesProps>;
+
+function markdownFromProps(props: FixedBoxProps): string {
+  if (typeof props.markdown === "string") return props.markdown;
+  const children = props.children;
+  if (typeof children === "string" || typeof children === "number") return String(children);
+  if (Array.isArray(children)) {
+    return children
+      .filter((child): child is string | number => typeof child === "string" || typeof child === "number")
+      .join("");
+  }
+  return "";
+}
+
+/**
+ * Fixed box with autoscaled markdown. Lists become PPTX bullets; `$a^2$` and
+ * `$$\\frac{1}{2}$$` become native OMML. Defaults to `fit="shrink"` and `valign="top"`.
+ *
+ * ```tsx
+ * <FixedBox x={0.7} y={1.5} w={6} h={4} markdown={`
+ * # Title
+ * - item one
+ * - item with $a^2+b^2=c^2$
+ *
+ * $$\\frac{1}{2}$$
+ * `} />
+ * ```
+ */
+export const FixedBox = ((props: FixedBoxProps) => {
+  const { markdown: _markdown, children: _children, fit, valign, fontSize, color, fontFace, ...rest } =
+    props;
+  const colorHex = typeof color === "string" ? color : undefined;
+  return createNode("Text", {
+    ...rest,
+    fontSize,
+    color,
+    fontFace,
+    fit: fit ?? "shrink",
+    valign: valign ?? "top",
+    runs: fromMarkdown(markdownFromProps(props), { fontSize, color: colorHex, fontFace }),
+  });
+}) as ComponentFactory<FixedBoxProps>;
 
 // ── Shapes ────────────────────────────────────────────────────────
 

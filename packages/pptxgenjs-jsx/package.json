@@ -66,9 +66,13 @@
 		"node": ">=24"
 	},
 	"dependencies": {
+		"@lofcz/mathlive": "^0.110.6",
+		"markdown-it": "^14.1.0",
+		"mathml2omml-plus": "^0.6.4",
 		"pptxgenjs-plus": "file:../.."
 	},
 	"devDependencies": {
+		"@types/markdown-it": "^14.2.0",
 		"@types/node": "^26.2.0",
 		"typescript": "^6.0.3"
 	}

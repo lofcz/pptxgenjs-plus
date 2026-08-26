@@ -21,3 +21,12 @@ export type {
 export { useSlideContext, useDeckContext, useGroupContext } from "./context.js";
 export type { SlideContextInfo, DeckContextInfo, GroupContextInfo } from "./context.js";
 export * from "./components.js";
+export {
+  applyOmmlRunStyle,
+  fromMarkdown,
+  latexToOmml,
+  mathRun,
+  tokenizeMath,
+  tryLatexToOmml,
+} from "./markdown/index.js";
+export type { ContentSegment, FromMarkdownStyle, OmmlRunStyle } from "./markdown/index.js";

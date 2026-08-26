@@ -29,6 +29,7 @@ await renderPptx(
   - [Deck & Presentation](#deck--presentation)
   - [Slide](#slide)
   - [Text & TextRun](#text--textrun)
+  - [FixedBox](#fixedbox)
   - [Shapes](#shapes)
   - [Charts](#charts)
   - [Tables](#tables)
@@ -227,6 +228,33 @@ Whitespace-only text between elements (e.g. from multi-line JSX formatting) is i
 ```
 
 > Note: pptxgenjs text `margin` values are in **points** (e.g. `18` ≈ 0.25"), not inches.
+
+### FixedBox
+
+A **fixed-size** text box. Pass CommonMark plus TeX delimiters; the box stays at the authored `x/y/w/h` and PowerPoint shrink-to-fit scales the content (`fit="shrink"`).
+
+- Headings, paragraphs, `**bold**` / `*italic*`, and lists become native PPTX runs (real bullets / numbered lists).
+- `$…$` (inline) and `$$…$$` (display) — also `\(…\)`, `\[…\]`, `\begin{env}` — become editable OMML via MathLive + mathml2omml-plus. No extra helper, no image raster.
+
+```tsx
+<FixedBox
+  x={0.7}
+  y={1.5}
+  w={6}
+  h={4}
+  fontSize={18}
+  color="0F172A"
+  markdown={`
+# Title
+- item one
+- item with $a^2+b^2=c^2$
+
+$$\\frac{1}{2}$$
+`}
+/>
+```
+
+`fromMarkdown`, `tokenizeMath`, `latexToOmml`, and `mathRun` are also exported from the package root when you need runs without the component.
 
 ### Shapes
 
