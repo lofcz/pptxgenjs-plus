@@ -24,7 +24,7 @@
     },
     "packages/pptxgenjs-jsx": {
       "name": "pptxgenjs-plus-jsx",
-      "version": "4.2.1",
+      "version": "4.3.0",
       "dependencies": {
         "@lofcz/mathlive": "^0.110.6",
         "markdown-it": "^14.1.0",
@@ -39,14 +39,14 @@
     },
     "packages/pptxgenjs-std": {
       "name": "pptxgenjs-plus-std",
-      "version": "4.2.1",
+      "version": "4.3.0",
       "devDependencies": {
         "@types/node": "^26.2.0",
         "pptxgenjs-plus": "file:../..",
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "pptxgenjs-plus": "4.2.1",
+        "pptxgenjs-plus": "4.3.0",
       },
     },
   },
@@ -851,7 +851,7 @@
 
     "parse5/entities": ["entities@6.0.1", "", {}, "sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g=="],
 
-    "pptxgenjs-plus-std/pptxgenjs-plus": ["pptxgenjs-plus@4.2.1", "", { "dependencies": { "@node-projects/jszip": "^4.2.1", "@rgrove/parse-xml": "^4.2.3", "pako": "^3.0.1" } }, "sha512-Wic2dFbuddVa5oCmPHZXbwm9iI8ugxT0VQc3iUDdzjj9NjcB2RP96+6ZMUut07Tb2I9Xk4CRpQHyBtgvZZ3k1A=="],
+    "pptxgenjs-plus-std/pptxgenjs-plus": ["pptxgenjs-plus@root:", {}],
 
     "@microsoft/tsdoc-config/ajv/json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
 
