@@ -30,6 +30,13 @@ function mustReplace (xml: string, pattern: RegExp | string, replacement: string
 	return xml.replace(pattern, replacement)
 }
 
+/** First `p:cNvPr` after the reserved `p:nvGrpSpPr` id="1". */
+function firstObjectCnvPrOpen (xml: string, label: string): string {
+	const match = [...xml.matchAll(/<p:cNvPr id="(\d+)"/g)].find(item => item[1] !== '1')
+	if (!match) throw new Error(`${label}: no object p:cNvPr`)
+	return match[0]
+}
+
 async function rewrite (zip: JSZip, part: string, rewriteXml: (xml: string) => string): Promise<void> {
 	const file = zip.file(part)
 	if (!file) throw new Error(`missing part ${part}`)
@@ -47,7 +54,7 @@ export const REPAIR_FIXTURES: RepairFixture[] = [
 		title: 'Non-numeric p:cNvPr@id',
 		expect: 'repair',
 		mutate: zip => rewrite(zip, 'ppt/slides/slide1.xml', xml =>
-			mustReplace(xml, '<p:cNvPr id="2"', '<p:cNvPr id="abc"', 'invalid-cnvid')),
+			mustReplace(xml, firstObjectCnvPrOpen(xml, 'invalid-cnvid'), '<p:cNvPr id="abc"', 'invalid-cnvid')),
 	},
 	{
 		id: 'empty-txbody',
@@ -75,7 +82,7 @@ export const REPAIR_FIXTURES: RepairFixture[] = [
 		title: 'Empty p:cNvPr@id',
 		expect: 'repair',
 		mutate: zip => rewrite(zip, 'ppt/slides/slide1.xml', xml =>
-			mustReplace(xml, '<p:cNvPr id="2"', '<p:cNvPr id=""', 'empty-cnvid')),
+			mustReplace(xml, firstObjectCnvPrOpen(xml, 'empty-cnvid'), '<p:cNvPr id=""', 'empty-cnvid')),
 	},
 	{
 		id: 'invalid-preset',

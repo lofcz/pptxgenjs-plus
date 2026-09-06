@@ -1446,7 +1446,8 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 			}
 		})
 	}
-	renderObjectList(slide._slideObjects)
+	// Notes live on `_slideObjects` for the notes part, not the slide spTree — skip them so they do not consume cNvPr ids
+	renderObjectList((slide._slideObjects ?? []).filter(obj => obj._type !== SLIDE_OBJECT_TYPES.notes))
 
 	// STEP 4: Add slide numbers (if any) last
 	if (slide._slideNumberProps) {
