@@ -624,7 +624,6 @@ export function resolveZoomSections (slide: PresSlide, sections?: SectionProps[]
 
 export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 	let strSlideXml: string = slide._name ? `<p:cSld name="${encodeXmlEntities(slide._name)}">` : '<p:cSld>'
-	let intTableNum = 1
 
 	// STEP 1: Add background color/image (ensure only a single `<p:bg>` tag is created, ex: when master-baskground has both `color` and `path`)
 	if (slide._bkgdImgRid) {
@@ -775,7 +774,8 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 
 					// STEP 1: Start Table XML
 					// NOTE: Non-numeric cNvPr id values will trigger "presentation needs repair" type warning in MS-PPT-2013
-					strXml = '<p:graphicFrame><p:nvGraphicFramePr>' + genXmlCNvPr(intTableNum * (slide._slideNum ?? 0) + 1, String(slideItemObj.options.objectName ?? ''), slideItemObj.options)
+					// Use the shared slide allocator — `intTableNum * slideNum + 1` collided with `idx + 2` (gitbrent/PptxGenJS#1532)
+					strXml = '<p:graphicFrame><p:nvGraphicFramePr>' + genXmlCNvPr(shapeId, String(slideItemObj.options.objectName ?? ''), slideItemObj.options)
 					// When the table binds to a master/layout placeholder, emit `<p:ph type="tbl"/>` (ECMA-376 §4.4.1.33, issue #856)
 					const tblPh = placeholderObj ? genXmlPlaceholder(placeholderObj, slideItemObj.options) : ''
 					// MS-PPTX §2.3.1.19: each p14:modId must be unique on the slide (not a constant).
@@ -1014,9 +1014,6 @@ export function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 
 					// STEP 6: Set table XML
 					strSlideXml += strXml
-
-					// LAST: Increment counter
-					intTableNum++
 					break
 				}
 

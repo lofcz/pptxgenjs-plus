@@ -3387,6 +3387,38 @@ test('SCV-Soft/9f66206: slide-number cNvPr id does not collide', async () => {
 	assert.doesNotMatch(xml, /<p:cNvPr id="25" name="Slide Number Placeholder 0"/, 'slide number still hardcoded to id 25')
 })
 
+function extractCnvPrIds (xml: string): number[] {
+	return [...xml.matchAll(/<p:cNvPr\b[^>]*\bid="(\d+)"/g)].map(match => Number(match[1]))
+}
+
+function assertUniqueCnvPrIds (ids: number[], label: string): void {
+	assert.ok(ids.length >= 3, `${label}: expected nvGrpSpPr + objects, got [${ids.join(', ')}]`)
+	assert.equal(ids[0], 1, `${label}: p:nvGrpSpPr must keep id="1"`)
+	assert.equal(new Set(ids).size, ids.length, `${label}: duplicate p:cNvPr/@id [${ids.join(', ')}]`)
+}
+
+test('gitbrent/PptxGenJS#1532: table + text shapes get unique p:cNvPr/@id', async () => {
+	const pptx = new pptxgen()
+	const slide = pptx.addSlide()
+	slide.addText('A text box', { x: 0.5, y: 0.5, w: 4, h: 0.5 })
+	slide.addTable([[{ text: 'A' }, { text: 'B' }]], { x: 0.5, y: 1.5, w: 4 })
+
+	const xml = await readPart(await writeZip(pptx), 'ppt/slides/slide1.xml')
+	assertUniqueCnvPrIds(extractCnvPrIds(xml), 'slide1 text+table')
+})
+
+test('gitbrent/PptxGenJS#1532: later slides keep unique p:cNvPr/@id with mixed object order', async () => {
+	const pptx = new pptxgen()
+	pptx.addSlide()
+	const slide = pptx.addSlide()
+	slide.addTable([[{ text: 'A' }, { text: 'B' }]], { x: 0.5, y: 1.5, w: 4 })
+	slide.addText('A text box', { x: 0.5, y: 0.5, w: 4, h: 0.5 })
+	slide.addShape(pptx.ShapeType.rect, { x: 5, y: 0.5, w: 1, h: 1 })
+
+	const xml = await readPart(await writeZip(pptx), 'ppt/slides/slide2.xml')
+	assertUniqueCnvPrIds(extractCnvPrIds(xml), 'slide2 table+text+shape')
+})
+
 test('fujita-h/d7e3e93: explicit image x/y/w/h win over placeholder geometry', async () => {
 	const pptx = new pptxgen()
 	pptx.defineSlideMaster({
