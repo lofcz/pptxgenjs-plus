@@ -24,7 +24,7 @@
     },
     "packages/pptxgenjs-jsx": {
       "name": "pptxgenjs-plus-jsx",
-      "version": "4.3.0",
+      "version": "4.3.1",
       "dependencies": {
         "@lofcz/mathlive": "^0.110.6",
         "markdown-it": "^14.1.0",
@@ -39,14 +39,14 @@
     },
     "packages/pptxgenjs-std": {
       "name": "pptxgenjs-plus-std",
-      "version": "4.3.0",
+      "version": "4.3.1",
       "devDependencies": {
         "@types/node": "^26.2.0",
         "pptxgenjs-plus": "file:../..",
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "pptxgenjs-plus": "4.3.0",
+        "pptxgenjs-plus": "4.3.1",
       },
     },
   },
