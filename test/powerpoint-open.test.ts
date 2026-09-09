@@ -40,7 +40,7 @@ run('powerpoint: invalid cNvPr id shows the Repair dialog', async () => {
 		const path = await writeGenerated(directory, 'good.pptx')
 		const zip = await JSZip.loadAsync(await readFile(path))
 		const slideXml = await zip.file('ppt/slides/slide1.xml')!.async('string')
-		zip.file('ppt/slides/slide1.xml', slideXml.replace('<p:cNvPr id="2"', '<p:cNvPr id="abc"'))
+		zip.file('ppt/slides/slide1.xml', slideXml.replace('<p:cNvPr id="2"', '<p:cNvPr id="abc"'), { createFolders: false })
 		const broken = join(directory, 'repair-cnvid.pptx')
 		await writeFile(broken, await zip.generateAsync({ type: 'nodebuffer' }))
 		const report = await verifyPptx(broken, { powerpoint: true })

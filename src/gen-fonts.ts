@@ -13,6 +13,7 @@
  */
 
 import type { JSZip } from '@node-projects/jszip'
+import { addZipFile } from './zip'
 import type { AddFontOptions, EmbedFontType } from './core-interfaces'
 import { convertToEot } from './vendor/fonteditor-core/convert-to-eot.js'
 
@@ -162,21 +163,21 @@ export async function embedFontsIntoZip (zip: JSZip, fonts: PendingEmbedFont[]):
 
 	const contentTypesFile = zip.file('[Content_Types].xml')
 	if (!contentTypesFile) throw new Error('[Content_Types].xml not found')
-	zip.file('[Content_Types].xml', ensureFntdataContentType(await contentTypesFile.async('string')))
+	addZipFile(zip, '[Content_Types].xml', ensureFntdataContentType(await contentTypesFile.async('string')))
 
 	const presentationFile = zip.file('ppt/presentation.xml')
 	if (!presentationFile) throw new Error('ppt/presentation.xml not found')
 	let presentationXml = await presentationFile.async('string')
 	presentationXml = ensurePresentationFontAttrs(presentationXml)
 	presentationXml = ensureEmbeddedFontLst(presentationXml, prepared)
-	zip.file('ppt/presentation.xml', presentationXml)
+	addZipFile(zip, 'ppt/presentation.xml', presentationXml)
 
 	const relsFile = zip.file('ppt/_rels/presentation.xml.rels')
 	if (!relsFile) throw new Error('ppt/_rels/presentation.xml.rels not found')
-	zip.file('ppt/_rels/presentation.xml.rels', appendFontRelationships(await relsFile.async('string'), prepared))
+	addZipFile(zip, 'ppt/_rels/presentation.xml.rels', appendFontRelationships(await relsFile.async('string'), prepared))
 
 	for (const font of prepared) {
-		zip.file(`ppt/fonts/${font.rid}.fntdata`, font.data, {
+		addZipFile(zip, `ppt/fonts/${font.rid}.fntdata`, font.data, {
 			binary: true,
 			compression: 'DEFLATE',
 		})
