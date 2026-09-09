@@ -696,7 +696,8 @@ function makeChartType (
 			}
 
 			// 5: Add axisId (NOTE: order matters - category comes first)
-			strXml += `<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/><c:axId val="${AXIS_ID_SERIES_PRIMARY}"/>`
+			strXml += `<c:axId val="${catAxisId}"/><c:axId val="${valAxisId}"/>`
+			if (chartType === CHART_TYPE.BAR3D) strXml += `<c:axId val="${AXIS_ID_SERIES_PRIMARY}"/>`
 
 			// 6: Close Chart tag
 			strXml += `</c:${chartType}Chart>`
