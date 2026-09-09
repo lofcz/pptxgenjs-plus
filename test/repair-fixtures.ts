@@ -40,7 +40,7 @@ function firstObjectCnvPrOpen (xml: string, label: string): string {
 async function rewrite (zip: JSZip, part: string, rewriteXml: (xml: string) => string): Promise<void> {
 	const file = zip.file(part)
 	if (!file) throw new Error(`missing part ${part}`)
-	zip.file(part, rewriteXml(await file.async('string')))
+	zip.file(part, rewriteXml(await file.async('string')), { createFolders: false })
 }
 
 export const REPAIR_FIXTURES: RepairFixture[] = [

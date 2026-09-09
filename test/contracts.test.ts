@@ -53,7 +53,7 @@ test('contract: addFont embeds font parts, content types, and rels', async () =>
 
 test('contract: rejects a part without a declared content type', async () => {
 	const invalidZip = await JSZip.loadAsync(await zip.generateAsync({ type: 'nodebuffer' }))
-	invalidZip.file('ppt/undeclared.bin', 'invalid')
+	invalidZip.file('ppt/undeclared.bin', 'invalid', { createFolders: false })
 	await assert.rejects(assertPptxPackageContracts(invalidZip), /package part has no content type/)
 })
 
@@ -62,7 +62,7 @@ test('contract: validates relationship references with any legal ID', async () =
 	const slideXml = await readPart(invalidZip, 'ppt/slides/slide1.xml')
 	const referencePattern = /r:(id|embed|link)="rId\d+"/
 	assert.match(slideXml, referencePattern, 'test presentation has no relationship reference')
-	invalidZip.file('ppt/slides/slide1.xml', slideXml.replace(referencePattern, (_match, attribute) => `r:${attribute}="custom-id"`))
+	invalidZip.file('ppt/slides/slide1.xml', slideXml.replace(referencePattern, (_match, attribute) => `r:${attribute}="custom-id"`), { createFolders: false })
 	await assert.rejects(assertPptxPackageContracts(invalidZip), /missing custom-id relationship/)
 })
 

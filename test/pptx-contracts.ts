@@ -160,6 +160,8 @@ function collectRelationshipIds (value: unknown, ids: Set<string>): void {
 }
 
 async function assertOoxmlPackageContracts (zip: JSZip, requiredParts: string[]): Promise<void> {
+	const directoryEntries = Object.values(zip.files).filter(entry => entry.dir)
+	assert.equal(directoryEntries.length, 0, `OPC packages must not contain ZIP directory entries: ${directoryEntries.map(entry => entry.name).join(', ')}`)
 	for (const name of requiredParts) assert.ok(zip.file(name), `missing required package part: ${name}`)
 
 	const packageParts = new Set(Object.keys(zip.files).filter(name => !name.endsWith('/')))
