@@ -61,6 +61,7 @@
  */
 
 import { JSZip } from '@node-projects/jszip'
+import { addZipFile } from './zip'
 import Slide from './slide'
 import {
 	AlignH,
@@ -664,7 +665,7 @@ export default class PptxGenJS implements IPresentationProps {
 				const mediaPath = rel.Target.replace(/\.\./g, 'ppt')
 				if (mediaPaths.has(mediaPath)) return
 				mediaPaths.add(mediaPath)
-				zip.file(mediaPath, data.split(',').pop() ?? '', { base64: true })
+				addZipFile(zip, mediaPath, data.split(',').pop() ?? '', { base64: true })
 			}
 		})
 	}
@@ -734,71 +735,58 @@ export default class PptxGenJS implements IPresentationProps {
 				if (slide._slideLayout) genObj.addPlaceholdersToSlideLayouts(slide)
 			})
 
-			// B: Add all required folders and files
-			zip.folder('_rels')
-			zip.folder('docProps')
-			zip.folder('ppt')?.folder('_rels')
-			zip.folder('ppt/charts')?.folder('_rels')
-			zip.folder('ppt/embeddings')
-			zip.folder('ppt/media')
-			zip.folder('ppt/slideLayouts')?.folder('_rels')
-			zip.folder('ppt/slideMasters')?.folder('_rels')
-			zip.folder('ppt/slides')?.folder('_rels')
-			zip.folder('ppt/theme')
-			zip.folder('ppt/notesMasters')?.folder('_rels')
-			zip.folder('ppt/notesSlides')?.folder('_rels')
+			// B: Add all required OPC package parts.
 			const trackingParts = {
 				revisionInfo: genRevision.wantsRevisionInfo(this.revisionInfo),
 				changesInfo: genRevision.wantsChangesInfo(this.changesInfo),
 			}
-			zip.file('[Content_Types].xml', genXml.makeXmlContTypes(this.slides, this.slideLayouts, this.masterSlide, trackingParts)) // TODO: pass only `this` like below! 20200206
-			zip.file('_rels/.rels', genXml.makeXmlRootRels())
-			zip.file('docProps/app.xml', genXml.makeXmlApp(this.slides, this.company, this.documentProps)) // TODO: pass only `this` like below! 20200206
-			zip.file('docProps/core.xml', genXml.makeXmlCore(this.title, this.subject, this.author, this.revision, this.created, this.modified, this.documentProps)) // TODO: pass only `this` like below! 20200206
-			zip.file('ppt/_rels/presentation.xml.rels', genXml.makeXmlPresentationRels(this.slides, trackingParts))
-			zip.file('ppt/theme/theme1.xml', genXml.makeXmlTheme(this))
+			addZipFile(zip, '[Content_Types].xml', genXml.makeXmlContTypes(this.slides, this.slideLayouts, this.masterSlide, trackingParts)) // TODO: pass only `this` like below! 20200206
+			addZipFile(zip, '_rels/.rels', genXml.makeXmlRootRels())
+			addZipFile(zip, 'docProps/app.xml', genXml.makeXmlApp(this.slides, this.company, this.documentProps)) // TODO: pass only `this` like below! 20200206
+			addZipFile(zip, 'docProps/core.xml', genXml.makeXmlCore(this.title, this.subject, this.author, this.revision, this.created, this.modified, this.documentProps)) // TODO: pass only `this` like below! 20200206
+			addZipFile(zip, 'ppt/_rels/presentation.xml.rels', genXml.makeXmlPresentationRels(this.slides, trackingParts))
+			addZipFile(zip, 'ppt/theme/theme1.xml', genXml.makeXmlTheme(this))
 			// notesMaster gets its own theme part (Office repair creates theme2 when notesMaster shares theme1; Juliussssssss 9bdfe09).
-			zip.file('ppt/theme/theme2.xml', genXml.makeXmlTheme(this, 'notes'))
-			zip.file('ppt/presentation.xml', genXml.makeXmlPresentation(this))
-			zip.file('ppt/presProps.xml', genXml.makeXmlPresProps(this))
-			zip.file('ppt/tableStyles.xml', genXml.makeXmlTableStyles(this._tableStyles))
-			zip.file('ppt/viewProps.xml', genXml.makeXmlViewProps(this))
+			addZipFile(zip, 'ppt/theme/theme2.xml', genXml.makeXmlTheme(this, 'notes'))
+			addZipFile(zip, 'ppt/presentation.xml', genXml.makeXmlPresentation(this))
+			addZipFile(zip, 'ppt/presProps.xml', genXml.makeXmlPresProps(this))
+			addZipFile(zip, 'ppt/tableStyles.xml', genXml.makeXmlTableStyles(this._tableStyles))
+			addZipFile(zip, 'ppt/viewProps.xml', genXml.makeXmlViewProps(this))
 
 			// C: Create a Layout/Master/Rel/Slide file for each SlideLayout and Slide
 			this.slideLayouts.forEach((layout, idx) => {
-				zip.file(`ppt/slideLayouts/slideLayout${idx + 1}.xml`, genXml.makeXmlLayout(layout))
-				zip.file(`ppt/slideLayouts/_rels/slideLayout${idx + 1}.xml.rels`, genXml.makeXmlSlideLayoutRel(idx + 1, this.slideLayouts))
+				addZipFile(zip, `ppt/slideLayouts/slideLayout${idx + 1}.xml`, genXml.makeXmlLayout(layout))
+				addZipFile(zip, `ppt/slideLayouts/_rels/slideLayout${idx + 1}.xml.rels`, genXml.makeXmlSlideLayoutRel(idx + 1, this.slideLayouts))
 			})
 			// Modern threaded comments (MS-PPTX §2.16): resolve authors once, emit authors + per-slide comment parts.
 			const hasComments = this.slides.some(s => (s.comments ?? []).length > 0)
 			const commentAuthors = hasComments ? genComments.collectCommentAuthors(this.slides, this.commentAuthors) : []
 			if (hasComments) {
-				zip.folder('ppt/comments')
-				zip.file('ppt/authors.xml', genComments.makeXmlCommentAuthors(commentAuthors))
+				addZipFile(zip, 'ppt/authors.xml', genComments.makeXmlCommentAuthors(commentAuthors))
 			}
 			if (trackingParts.revisionInfo) {
-				zip.file(genRevision.REVISION_INFO_PART, genRevision.makeXmlRevisionInfo(this.revisionInfo as true | RevisionInfoProps))
+				addZipFile(zip, genRevision.REVISION_INFO_PART, genRevision.makeXmlRevisionInfo(this.revisionInfo as true | RevisionInfoProps))
 			}
 			if (trackingParts.changesInfo) {
-				zip.file(genRevision.CHANGES_INFO_PART, genRevision.makeXmlChangesInfo())
+				addZipFile(zip, genRevision.CHANGES_INFO_PART, genRevision.makeXmlChangesInfo())
 			}
 			this.slides.forEach((slide, idx) => {
-				zip.file(`ppt/slides/slide${idx + 1}.xml`, genXml.makeXmlSlide(slide, this._sections))
-				zip.file(`ppt/slides/_rels/slide${idx + 1}.xml.rels`, genXml.makeXmlSlideRel(this.slides, this.slideLayouts, idx + 1))
+				addZipFile(zip, `ppt/slides/slide${idx + 1}.xml`, genXml.makeXmlSlide(slide, this._sections))
+				addZipFile(zip, `ppt/slides/_rels/slide${idx + 1}.xml.rels`, genXml.makeXmlSlideRel(this.slides, this.slideLayouts, idx + 1))
 				// Create all slide notes related items. Notes of empty strings are created for slides which do not have notes specified, to keep track of _rels.
-				zip.file(`ppt/notesSlides/notesSlide${idx + 1}.xml`, genXml.makeXmlNotesSlide(slide))
-				zip.file(`ppt/notesSlides/_rels/notesSlide${idx + 1}.xml.rels`, genXml.makeXmlNotesSlideRel(idx + 1))
+				addZipFile(zip, `ppt/notesSlides/notesSlide${idx + 1}.xml`, genXml.makeXmlNotesSlide(slide))
+				addZipFile(zip, `ppt/notesSlides/_rels/notesSlide${idx + 1}.xml.rels`, genXml.makeXmlNotesSlideRel(idx + 1))
 				if ((slide.comments ?? []).length > 0)
-					zip.file(`ppt/comments/commentSlide${idx + 1}.xml`, genComments.makeXmlSlideComments(slide, commentAuthors))
+					addZipFile(zip, `ppt/comments/commentSlide${idx + 1}.xml`, genComments.makeXmlSlideComments(slide, commentAuthors))
 				for (const rel of slide._rels) {
 					if (rel.type !== SLIDE_OBJECT_TYPES.contentPart && rel.type !== SLIDE_OBJECT_TYPES.officeApp) continue
-					zip.file(rel.Target.replace(/^\.\.\//, 'ppt/'), typeof rel.data === 'string' ? rel.data : '')
+					addZipFile(zip, rel.Target.replace(/^\.\.\//, 'ppt/'), typeof rel.data === 'string' ? rel.data : '')
 				}
 			})
-			zip.file('ppt/slideMasters/slideMaster1.xml', genXml.makeXmlMaster(this.masterSlide, this.slideLayouts))
-			zip.file('ppt/slideMasters/_rels/slideMaster1.xml.rels', genXml.makeXmlMasterRel(this.masterSlide, this.slideLayouts))
-			zip.file('ppt/notesMasters/notesMaster1.xml', genXml.makeXmlNotesMaster())
-			zip.file('ppt/notesMasters/_rels/notesMaster1.xml.rels', genXml.makeXmlNotesMasterRel())
+			addZipFile(zip, 'ppt/slideMasters/slideMaster1.xml', genXml.makeXmlMaster(this.masterSlide, this.slideLayouts))
+			addZipFile(zip, 'ppt/slideMasters/_rels/slideMaster1.xml.rels', genXml.makeXmlMasterRel(this.masterSlide, this.slideLayouts))
+			addZipFile(zip, 'ppt/notesMasters/notesMaster1.xml', genXml.makeXmlNotesMaster())
+			addZipFile(zip, 'ppt/notesMasters/_rels/notesMaster1.xml.rels', genXml.makeXmlNotesMasterRel())
 
 			// D: Create all Rels (images, media, chart data)
 			const mediaPaths = new Set<string>()

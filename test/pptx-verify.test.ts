@@ -77,7 +77,7 @@ test('verify: undeclared package part fails contracts and stays in the inventory
 	assertVerified(good)
 
 	const zip = await JSZip.loadAsync(await zipBytes(pptx))
-	zip.file('ppt/undeclared.bin', 'invalid')
+	zip.file('ppt/undeclared.bin', 'invalid', { createFolders: false })
 	const report = await verifyPptx(zip)
 
 	assert.equal(report.ok, false)
