@@ -41,6 +41,17 @@ async function readEmbeddedXlsx (zip: JSZip): Promise<JSZip> {
 	return await JSZip.loadAsync(await file.async('nodebuffer'))
 }
 
+test('#12: bar and line charts reference only their generated axes', async () => {
+	for (const type of ['bar', 'line', 'bar3D']) {
+		const pptx = new pptxgen()
+		pptx.addSlide().addChart(type, [{ name: 'Sales', labels: ['Q1', 'Q2'], values: [1, 2] }], { x: 1, y: 1, w: 4, h: 3 })
+		const xml = await readChart(await writeZip(pptx))
+		const plot = xml.match(new RegExp(`<c:${type}Chart>[\\s\\S]*?</c:${type}Chart>`))?.[0] ?? ''
+		assert.equal((plot.match(/<c:axId /g) ?? []).length, type === 'bar3D' ? 3 : 2)
+		assert.equal(xml.includes('<c:serAx>'), type === 'bar3D')
+	}
+})
+
 test('#19/#18: SVG image + hyperlink gets unique rIds and an escaped url', async () => {
 	const pptx = new pptxgen()
 	pptx.addSlide().addImage({ data: 'image/svg+xml;base64,PHN2Zy8+', x: 1, y: 1, w: 1, h: 1, hyperlink: { url: 'https://x.com/?a=1&b=2' } })
