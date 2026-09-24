@@ -282,14 +282,33 @@ export function warnDeprecatedOnce (key: string, message: string): void {
 }
 
 /**
+ * Characters XML 1.0 forbids anywhere in a document (even when escaped):
+ * C0 controls other than TAB / LF / CR, the non-characters U+FFFE / U+FFFF
+ * and unpaired surrogates. A single one in a text run makes PowerPoint show
+ * the repair prompt for the whole package.
+ */
+// eslint-disable-next-line no-control-regex
+const XML_ILLEGAL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+
+/**
+ * Drop every character that cannot appear in an XML 1.0 document
+ * @param {string} text - text to sanitize
+ * @returns {string} text without XML-illegal characters
+ */
+export function stripXmlIllegalChars (text: string): string {
+	return text.replace(XML_ILLEGAL_CHARS, '')
+}
+
+/**
  * Replace special XML characters with HTML-encoded strings
+ * - Also drops characters XML 1.0 forbids outright (control chars, lone surrogates)
  * @param {string} xml - XML string to encode
  * @returns {string} escaped XML
  */
 export function encodeXmlEntities (xml: string | undefined): string {
 	// NOTE: Dont use short-circuit eval here as value c/b "0" (zero) etc.!
 	if (typeof xml === 'undefined' || xml == null) return ''
-	return xml.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+	return stripXmlIllegalChars(xml.toString()).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
 /**

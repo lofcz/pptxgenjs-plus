@@ -48,6 +48,7 @@ import {
 	inch2Emu,
 	resolveGlowOptions,
 	validateXmlFragment,
+	stripXmlIllegalChars,
 	valToPts,
 	warnDeprecatedOnce,
 } from '../gen-utils'
@@ -328,7 +329,9 @@ export const P1710_NS = 'http://schemas.microsoft.com/office/powerpoint/2017/10/
  * @see MS-ODRAWXML Math / mc:AlternateContent; proven via PowerPoint 16 COM round-trip.
  */
 function normalizeOmml (omml: string): string {
-	let trimmed = omml.trim()
+	// Control characters in math text (`<m:t>`) are a data defect, not a markup
+	// one - drop them instead of failing the whole export over a single run.
+	let trimmed = stripXmlIllegalChars(omml).trim()
 	if (!trimmed) return ''
 
 	// Malformed OMML would be embedded verbatim and corrupt the whole package

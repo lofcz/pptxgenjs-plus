@@ -13,6 +13,7 @@ import pptxgen from '../src/pptxgen'
 import { genTableToSlides } from '../src/gen-tables'
 import type { TextPropsOptions } from '../src/core-interfaces'
 import { assertEmbeddedFontContracts, assertPptxPackageContracts, assertRevisionAndChangesInfoContracts, assertSlideTimingStructure, assertSlideTransitionStructure } from './pptx-contracts'
+import { parseXml } from '@rgrove/parse-xml'
 
 /** 4x2 px PNG - non-square on purpose, so a 1x1 inch default is obvious */
 const PNG_4x2 = 'image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAADklEQVR4nGP4jwQYkDkANvEX6SAXxcIAAAAASUVORK5CYII='
@@ -898,6 +899,18 @@ test('#35: images accept a line/outline and emit it in the picture spPr', async 
 	assert.ok(pic.includes('<a:ln w="25400">'), `picture outline width missing: ${pic}`)
 	assert.ok(pic.includes('<a:srgbClr val="FF0000"/>'), 'picture outline color missing')
 	assert.ok(pic.includes('<a:prstDash val="dash"/>'), 'picture outline dash type missing')
+})
+
+test('OMML: XML-illegal control characters in math text are dropped instead of failing the export', async () => {
+	// A stray U+0005 (model-authored `\\text` mangled in transit) used to throw
+	// "not a well-formed XML fragment" and abort the whole deck export.
+	const omml = '<m:oMath><m:r><m:t>\u0005ext</m:t></m:r><m:r><m:t>nA</m:t></m:r></m:oMath>'
+	const pptx = new pptxgen()
+	pptx.addSlide().addText([{ text: '', options: { omml } }], { x: 0.5, y: 0.5, w: 6, h: 1 })
+	const xml = await readPart(await writeZip(pptx), 'ppt/slides/slide1.xml')
+	assert.ok(xml.includes('<m:t>ext</m:t>'), 'control character stripped from math text')
+	assert.ok(!xml.includes('\u0005'), 'no control character in slide XML')
+	assert.doesNotThrow(() => parseXml(xml), 'slide XML stays well-formed')
 })
 
 test('OMML: text runs with options.omml emit a14:m + m:oMath (PowerPoint-required wrapper)', async () => {

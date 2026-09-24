@@ -15,6 +15,7 @@ import {
 	getSmartParseNumber,
 	getUuid,
 	encodeXmlEntities,
+	stripXmlIllegalChars,
 	inch2Emu,
 	valToPts,
 	convertRotationDegrees,
@@ -88,6 +89,17 @@ test('encodeXmlEntities', () => {
 	assert.equal(encodeXmlEntities('a & b < c > d "e" \'f\''), 'a &amp; b &lt; c &gt; d &quot;e&quot; &apos;f&apos;')
 	assert.equal(encodeXmlEntities(null as unknown as string), '')
 	assert.equal(encodeXmlEntities(undefined as unknown as string), '')
+	// XML 1.0 forbids C0 controls (except TAB/LF/CR), U+FFFE/U+FFFF and lone surrogates
+	assert.equal(encodeXmlEntities('\u0005ext{nA}'), 'ext{nA}', 'stray control char is dropped')
+	assert.equal(encodeXmlEntities('a\u0000b\u001fc\uFFFFd'), 'abcd')
+	assert.equal(encodeXmlEntities('x\ty\nz\r'), 'x\ty\nz\r', 'whitespace controls survive')
+	assert.equal(encodeXmlEntities('lone\uD83Dsurrogate'), 'lonesurrogate')
+	assert.equal(encodeXmlEntities('π ≠ 😀'), 'π ≠ 😀', 'valid astral pairs survive')
+})
+
+test('stripXmlIllegalChars', () => {
+	assert.equal(stripXmlIllegalChars('\u0001\u0008\u000B\u000C\u000E\u001F'), '')
+	assert.equal(stripXmlIllegalChars('ok \t\n\r'), 'ok \t\n\r')
 })
 
 test('getSmartParseNumber', () => {
