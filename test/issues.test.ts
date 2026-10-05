@@ -193,6 +193,23 @@ test('#21/#23: bubble chart workbook keeps zeros and has a valid table ref', asy
 	}
 })
 
+test('bubble chart table ref covers the header row and one row per X value', async () => {
+	// The table ref used the column count as its last row: 5 X values and 1 series (3 columns) gave A1:C3, not A1:C6
+	const pptx = new pptxgen()
+	pptx.addSlide().addChart(pptx.ChartType.bubble, [
+		{ name: 'X-Axis', values: [1, 2, 3, 4, 5] },
+		{ name: 'Y1', values: [5, 4, 3, 2, 1], sizes: [1, 2, 3, 4, 5] },
+	], { x: 1, y: 1, w: 4, h: 3 })
+
+	const xlsx = await readEmbeddedXlsx(await writeZip(pptx))
+	const sheet = await readPart(xlsx, 'xl/worksheets/sheet1.xml')
+	const table = await readPart(xlsx, 'xl/tables/table1.xml')
+	const dimension = /<dimension ref="([^"]+)"/.exec(sheet)?.[1]
+	assert.equal(dimension, 'A1:C6')
+	assert.equal(/<table\b[^>]*\bref="([^"]+)"/.exec(table)?.[1], dimension, 'table ref must match the worksheet range')
+	assert.ok(sheet.includes('<c r="C6">'), 'last data row is outside the table')
+})
+
 test('#38: multi-level category chart writes a coherent worksheet', async () => {
 	const LABELS = [
 		['Gear', 'Berg', 'Motr', 'Swch', 'Plug', 'Cord'],
