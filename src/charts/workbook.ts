@@ -219,7 +219,7 @@ function addTableFile (chartObject: ISlideRelChart, zipExcel: JSZip): void {
 	{
 		let strTableXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 		if (chartObject.opts._type === CHART_TYPE.BUBBLE || chartObject.opts._type === CHART_TYPE.BUBBLE3D) {
-			strTableXml += `<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="Table1" ref="A1:${getExcelColName(intBubbleCols)}${intBubbleCols}" totalsRowShown="0">`
+			strTableXml += `<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="Table1" ref="A1:${getExcelColName(intBubbleCols)}${firstDataValues.length + 1}" totalsRowShown="0">`
 			strTableXml += `<tableColumns count="${intBubbleCols}">`
 			let idxColLtr = 1
 			data.forEach((obj, idx) => {
