@@ -322,7 +322,8 @@ function addWorksheetFile (chartObject: ISlideRelChart, zipExcel: JSZip, dataSty
 			firstDataValues.forEach((val, idx) => {
 				// Leading col is reserved for the 'X-Axis' value, so hard-code it, then loop over col values
 				strSheetXml += `<row r="${idx + 2}" spans="1:${intBubbleCols}">`
-				strSheetXml += `<c r="A${idx + 2}"><v>${val}</v></c>`
+				// An X gap (null/undefined) is an empty cell like a Y gap; `${val}` wrote `<v>null</v>`, a numeric cell that is no number
+				strSheetXml += `<c r="A${idx + 2}"><v>${val || val === 0 ? val : ''}</v></c>`
 				// Add Y-Axis 1->N (idy=0 = Xaxis)
 				let idxColLtr = 2
 				for (let idy = 1; idy < data.length; idy++) {
@@ -371,7 +372,8 @@ function addWorksheetFile (chartObject: ISlideRelChart, zipExcel: JSZip, dataSty
 			firstDataValues.forEach((val, idx) => {
 				// Leading col is reserved for the 'X-Axis' value, so hard-code it, then loop over col values
 				strSheetXml += `<row r="${idx + 2}" spans="1:${data.length}">`
-				strSheetXml += `<c r="A${idx + 2}"><v>${val}</v></c>`
+				// An X gap (null/undefined) is an empty cell like a Y gap; `${val}` wrote `<v>null</v>`, a numeric cell that is no number
+				strSheetXml += `<c r="A${idx + 2}"><v>${val || val === 0 ? val : ''}</v></c>`
 				// Add Y-Axis 1->N
 				for (let idy = 1; idy < data.length; idy++) {
 					const idyValues = data[idy].values ?? []
