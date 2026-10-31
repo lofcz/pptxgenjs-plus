@@ -1224,7 +1224,7 @@ function makeChartType (
 			strXml += '      <a:p>'
 			strXml += '        <a:pPr>'
 			strXml += `          <a:defRPr sz="${Math.round((opts.dataLabelFontSize || DEF_FONT_SIZE) * 100)}" b="${opts.dataLabelFontBold ? '1' : '0'}" i="${opts.dataLabelFontItalic ? '1' : '0'}" u="none" strike="noStrike">`
-			strXml += `            <a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:latin typeface="${encodeXmlEntities(opts.dataLabelFontFace) || 'Arial'}"/>`
+			strXml += `            <a:solidFill>${createColorElement(opts.dataLabelColor || DEF_FONT_COLOR)}</a:solidFill><a:latin typeface="${encodeXmlEntities(opts.dataLabelFontFace) || 'Arial'}"/>`
 			strXml += '          </a:defRPr>'
 			strXml += '        </a:pPr>'
 			strXml += '      </a:p>'

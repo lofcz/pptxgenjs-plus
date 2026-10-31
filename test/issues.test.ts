@@ -720,6 +720,20 @@ test('pie: series-level dLbls default to ctr and honor show* opts (no per-point 
 	assert.ok(dLbls.includes('<c:showCatName val="0"/>'), 'series showCatName must follow showLabel')
 })
 
+test('pie: series-level data label color honors dataLabelColor', async () => {
+	const pptx = new pptxgen()
+	pptx.addSlide().addChart(
+		pptx.ChartType.pie,
+		[{ name: 'Share', labels: ['A', 'B'], values: [40, 60] }],
+		{ x: 0.5, y: 0.5, w: 4, h: 3, showPercent: true, dataLabelColor: 'FFFFFF' },
+	)
+
+	const chart = await readChart(await writeZip(pptx))
+	const dLbls = /<c:dLbls>[\s\S]*?<\/c:dLbls>/.exec(chart)?.[0] ?? ''
+	assert.ok(dLbls.includes('<a:srgbClr val="FFFFFF"/>'), 'series data label color was not emitted')
+	assert.ok(!dLbls.includes('<a:srgbClr val="000000"/>'), 'series data label color remained hard-coded black')
+})
+
 test('custom dataLabels: pie sparse overrides keep series-level dLbls', async () => {
 	const pptx = new pptxgen()
 	pptx.addSlide().addChart(
