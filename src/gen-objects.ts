@@ -722,6 +722,9 @@ export function addImageDefinition(target: PresSlide | SlideLayout, opt: ImagePr
 
 	// STEP 4: Add this image to this Slide Rels (rId/rels count spans all slides! Count all images to get next rId)
 	if (strImgExtn === 'svg') {
+		if (opt.svgPngData !== undefined && !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/i.test(opt.svgPngData)) {
+			throw new Error('svgPngData must be a base64 PNG data URI')
+		}
 		// SVG files consume *TWO* rId's: (a png version and the svg image)
 		// <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
 		// <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.svg"/>
@@ -734,10 +737,10 @@ export function addImageDefinition(target: PresSlide | SlideLayout, opt: ImagePr
 			path: strImagePath || strImageData + 'png',
 			type: 'image/png',
 			extn: 'png',
-			data: strImageData || '',
+			data: opt.svgPngData || strImageData || '',
 			rId: imageRelId,
 			Target: `../media/${imageTargetStem(target)}.png`,
-			isSvgPng: true,
+			isSvgPng: !opt.svgPngData,
 			fill: opt.fill,
 			svgSize: { w: getSmartParseNumber(newObject.options?.w, 'X', target._presLayout), h: getSmartParseNumber(newObject.options?.h, 'Y', target._presLayout) },
 		})

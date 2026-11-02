@@ -1522,6 +1522,12 @@ export interface AudioCdProps {
 
 export interface ImageProps extends PositionProps, DataOrPathProps, ObjectNameProps, AppearOnClickProps, NvPrExtensionProps {
 	/**
+	 * Pre-rendered PNG data URI for an SVG image's compatibility preview.
+	 * Supply this when exporting in a worker or Node, where DOM rasterization is unavailable.
+	 * The original SVG remains embedded. The preview must reflect any SVG fill color.
+	 */
+	svgPngData?: string
+	/**
 	 * Alt Text value ("How would you describe this object and its contents to someone who is blind?")
 	 * - PowerPoint: [right-click on an image] > "Edit Alt Text..."
 	 */

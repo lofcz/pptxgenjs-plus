@@ -13,6 +13,32 @@ import { assertEmbeddedFontContracts, assertEmbeddedXlsxContracts, assertModernC
 
 let zip: JSZip
 
+test('contract: pre-rendered SVG previews preserve vector and PNG parts without a DOM', async () => {
+	const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16"><rect width="24" height="16" fill="red"/></svg>'
+	const data = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+	const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+	const pptx = new pptxgen()
+	const options = { data, svgPngData: `data:image/png;base64,${png}`, x: 1, y: 1, w: 3, h: 2 }
+	const before = JSON.stringify(options)
+	pptx.addSlide().addImage(options)
+	const result = await JSZip.loadAsync(await pptx.write({ outputType: 'arraybuffer' }) as ArrayBuffer)
+	await assertPptxPackageContracts(result)
+	const vector = Object.keys(result.files).find(name => /^ppt\/media\/.*\.svg$/.test(name))!
+	const preview = Object.keys(result.files).find(name => /^ppt\/media\/.*\.png$/.test(name))!
+	assert.equal(await result.file(vector)!.async('string'), svg)
+	assert.deepEqual(await result.file(preview)!.async('uint8array'), new Uint8Array(Buffer.from(png, 'base64')))
+	assert.match(await readPart(result, 'ppt/slides/slide1.xml'), /svgBlip/)
+	assert.equal(JSON.stringify(options), before)
+})
+
+test('contract: SVG preview rejects non-PNG data', () => {
+	const pptx = new pptxgen()
+	assert.throws(() => pptx.addSlide().addImage({
+		data: 'data:image/svg+xml;base64,PHN2Zy8+', svgPngData: 'data:image/jpeg;base64,YQ==',
+		x: 0, y: 0, w: 1, h: 1,
+	}), /svgPngData must be a base64 PNG/)
+})
+
 before(async () => {
 	const pptx = new pptxgen()
 	const slide = pptx.addSlide()
