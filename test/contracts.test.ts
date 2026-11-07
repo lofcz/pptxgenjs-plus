@@ -9,9 +9,35 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { JSZip } from '@node-projects/jszip'
 import pptxgen from '../src/pptxgen'
+import { XMLParser } from 'fast-xml-parser'
 import { assertEmbeddedFontContracts, assertEmbeddedXlsxContracts, assertModernCommentPartContracts, assertNoEmbeddedFonts, assertPptxPackageContracts, readPart } from './pptx-contracts'
 
 let zip: JSZip
+
+test('contract: speaker notes preserve lines, blank paragraphs and XML text', async () => {
+	const pptx = new pptxgen()
+	const lines = ['', 'Příliš žluťoučký kůň & <téma>', '• First point', '  • Nested point', '', 'Last line', '']
+	pptx.addSlide().addNotes(lines.join('\r\n'))
+	pptx.addSlide().addNotes('One\nTwo\rThree')
+	pptx.addSlide().addNotes('')
+	pptx.addSlide()
+	const result = await JSZip.loadAsync(await pptx.write({ outputType: 'arraybuffer' }) as ArrayBuffer)
+	await assertPptxPackageContracts(result)
+	const parser = new XMLParser({ ignoreAttributes: false, trimValues: false })
+	type Paragraph = { 'a:r'?: { 'a:t': string } }
+	type NotesShape = {
+		'p:nvSpPr': { 'p:nvPr': { 'p:ph': { '@_type': string } } }
+		'p:txBody': { 'a:p': Paragraph | Paragraph[] }
+	}
+	for (const [index, expected] of [lines, ['One', 'Two', 'Three'], [''], ['']].entries()) {
+		const xml = await readPart(result, `ppt/notesSlides/notesSlide${index + 1}.xml`)
+		const shapes: NotesShape[] = parser.parse(xml)['p:notes']['p:cSld']['p:spTree']['p:sp']
+		const body = shapes.find(shape => shape['p:nvSpPr']['p:nvPr']['p:ph']['@_type'] === 'body')!['p:txBody']
+		const paragraphs = Array.isArray(body['a:p']) ? body['a:p'] : [body['a:p']]
+		assert.deepEqual(paragraphs.map(p => p['a:r']?.['a:t'] ?? ''), expected)
+		assert.doesNotMatch(xml, /<a:t><\/a:t>/, 'empty paragraphs must not create empty runs')
+	}
+})
 
 test('contract: pre-rendered SVG previews preserve vector and PNG parts without a DOM', async () => {
 	const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16"><rect width="24" height="16" fill="red"/></svg>'
