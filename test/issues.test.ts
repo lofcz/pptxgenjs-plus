@@ -210,6 +210,22 @@ test('bubble chart table ref covers the header row and one row per X value', asy
 	assert.ok(sheet.includes('<c r="C6">'), 'last data row is outside the table')
 })
 
+test('scatter and bubble workbooks write an X gap as an empty cell, not <v>null</v>', async () => {
+	// The X column was written as `<v>${val}</v>`: a null X value became `<v>null</v>`, a numeric cell that is no number
+	const series = {
+		scatter: [{ name: 'X', values: [1, null, 0, 4] }, { name: 'Y', values: [5, 6, 0, 8] }],
+		bubble: [{ name: 'X', values: [1, null, 0, 4] }, { name: 'Y', values: [5, 6, 0, 8], sizes: [1, 2, 0, 4] }],
+	}
+	for (const type of ['scatter', 'bubble'] as const) {
+		const pptx = new pptxgen()
+		pptx.addSlide().addChart(pptx.ChartType[type], series[type] as never, { x: 1, y: 1, w: 4, h: 3 })
+		const sheet = await readPart(await readEmbeddedXlsx(await writeZip(pptx)), 'xl/worksheets/sheet1.xml')
+		assert.ok(!sheet.includes('<v>null</v>') && !sheet.includes('<v>undefined</v>'), `${type}: no null or undefined cell value`)
+		assert.ok(sheet.includes('<c r="A3"><v></v></c>'), `${type}: the X gap is an empty cell`)
+		assert.ok(sheet.includes('<c r="A4"><v>0</v></c>'), `${type}: an X value of 0 is kept`)
+	}
+})
+
 test('#38: multi-level category chart writes a coherent worksheet', async () => {
 	const LABELS = [
 		['Gear', 'Berg', 'Motr', 'Swch', 'Plug', 'Cord'],
